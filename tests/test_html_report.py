@@ -3,7 +3,6 @@ import re
 
 import pytest
 
-from mergeweather import report
 from mergeweather.cli import main
 from mergeweather.html_report import graph_data, render
 
@@ -25,9 +24,18 @@ def test_self_contained_no_network(demo_report):
 
 def test_dashboard_sections(demo_report):
     _, html = demo_report
-    for text in ["Storm warning", "Interaction graph", 'id="mw-graph"', "Combination lattice", "Branch network",
-                 "Evidence &amp; LLM Explanation", "Copy reproduction command", "Removal checks",
-                 "proven 1-minimal", "mergeweather explain report.json"]:
+    for text in [
+        "Storm warning",
+        "Interaction graph",
+        'id="mw-graph"',
+        "Combination lattice",
+        "Branch network",
+        "Evidence &amp; LLM Explanation",
+        "Copy reproduction command",
+        "Removal checks",
+        "proven 1-minimal",
+        "mergeweather explain report.json",
+    ]:
         assert text in html, text
 
 
@@ -66,9 +74,15 @@ def test_hostile_content_is_escaped(demo_report):
 def test_explanation_in_drawer_with_labels(demo_report):
     rep, _ = demo_report
     rep = json.loads(json.dumps(rep))
-    rep["explanation"] = {"model": "test-model", "summary": "Three stages exceed the SLA together.", "warnings": [],
-                          "claims": [{"text": "Each branch adds 60 ms.", "label": "observation", "evidence": ["diff:tax"]},
-                                     {"text": "A budget check per stage would catch this.", "label": "hypothesis", "evidence": []}]}
+    rep["explanation"] = {
+        "model": "test-model",
+        "summary": "Three stages exceed the SLA together.",
+        "warnings": [],
+        "claims": [
+            {"text": "Each branch adds 60 ms.", "label": "observation", "evidence": ["diff:tax"]},
+            {"text": "A budget check per stage would catch this.", "label": "hypothesis", "evidence": []},
+        ],
+    }
     html = render(rep)
     assert "Three stages exceed the SLA together." in html
     assert "OBSERVATION" in html and "HYPOTHESIS" in html and "diff:tax" in html

@@ -10,13 +10,14 @@ evidence IDs. Claims are validated after the fact:
 
 This step never changes findings; it only annotates the report.
 """
+
 from __future__ import annotations
 
 import json
 import os
 import re
 import urllib.request
-from typing import Callable, Dict, List, Optional
+from typing import Callable
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
 API_URL = "https://api.anthropic.com/v1/messages"
@@ -27,57 +28,83 @@ SYSTEM = (
     "(e.g. 'diff:feature-x', 'combo:a+b'). If a claim is inference beyond what the evidence "
     "directly shows, set kind to 'hypothesis'. Reply with a single JSON object: "
     '{"summary": str, "claims": [{"text": str, "kind": "observation"|"hypothesis", '
-    '"evidence": [str]}]}. No prose outside the JSON.')
+    '"evidence": [str]}]}. No prose outside the JSON.'
+)
 
 
-def evidence_bundle(report: Dict, max_diff: int = 3000) -> Dict[str, Dict]:
-    ev: Dict[str, Dict] = {}
+def evidence_bundle(report: dict, max_diff: int = 3000) -> dict[str, dict]:
+    ev: dict[str, dict] = {}
     for b in report["inputs"]["branches"]:
-        ev[f"diff:{b['label']}"] = {"branch": b["label"], "changed_files": b["changed_files"],
-                                    "diff": b["diff"][:max_diff]}
+        ev[f"diff:{b['label']}"] = {
+            "branch": b["label"],
+            "changed_files": b["changed_files"],
+            "diff": b["diff"][:max_diff],
+        }
     for c in report["combinations"]:
         ev[f"combo:{c['id']}"] = {
-            "branches": c["branches"], "status": c["status"], "tree": c["tree"],
+            "branches": c["branches"],
+            "status": c["status"],
+            "tree": c["tree"],
             "conflict_files": c["conflict_files"],
-            "runs": [{"id": r["id"], "outcome": r["outcome"], "exit_code": r["exit_code"],
-                      "signature": r["signature"], "output_tail": (r["stdout_tail"] + r["stderr_tail"])[-800:]}
-                     for r in c["runs"][:2]],
+            "runs": [
+                {
+                    "id": r["id"],
+                    "outcome": r["outcome"],
+                    "exit_code": r["exit_code"],
+                    "signature": r["signature"],
+                    "output_tail": (r["stdout_tail"] + r["stderr_tail"])[-800:],
+                }
+                for r in c["runs"][:2]
+            ],
         }
     for f in report["findings"]:
-        ev[f"finding:{f['id']}"] = {k: f[k] for k in ("branches", "kind", "fingerprint", "minimality",
-                                                    "minimality_caveats", "stability", "signature")}
+        ev[f"finding:{f['id']}"] = {
+            k: f[k]
+            for k in ("branches", "kind", "fingerprint", "minimality", "minimality_caveats", "stability", "signature")
+        }
     return ev
 
 
-def build_prompt(report: Dict) -> str:
+def build_prompt(report: dict) -> str:
     ev = evidence_bundle(report)
-    return ("Test command: " + report["inputs"]["test_command"] + "\n\nEvidence (JSON, keyed by ID):\n"
-            + json.dumps(ev, indent=1) + "\n\nExplain the findings "
-            + ", ".join(f["id"] for f in report["findings"]) + ".")
+    return (
+        "Test command: "
+        + report["inputs"]["test_command"]
+        + "\n\nEvidence (JSON, keyed by ID):\n"
+        + json.dumps(ev, indent=1)
+        + "\n\nExplain the findings "
+        + ", ".join(f["id"] for f in report["findings"])
+        + "."
+    )
 
 
-def anthropic_transport(prompt: str, model: str, api_key: Optional[str] = None) -> str:
+def anthropic_transport(prompt: str, model: str, api_key: str | None = None) -> str:
     key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         raise RuntimeError("ANTHROPIC_API_KEY is not set")
-    body = json.dumps({"model": model, "max_tokens": 2000, "system": SYSTEM,
-                       "messages": [{"role": "user", "content": prompt}]}).encode()
-    req = urllib.request.Request(API_URL, data=body, method="POST", headers={
-        "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+    body = json.dumps(
+        {"model": model, "max_tokens": 2000, "system": SYSTEM, "messages": [{"role": "user", "content": prompt}]}
+    ).encode()
+    req = urllib.request.Request(
+        API_URL,
+        data=body,
+        method="POST",
+        headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+    )
     with urllib.request.urlopen(req, timeout=120) as resp:
         data = json.loads(resp.read())
     return "".join(part.get("text", "") for part in data.get("content", []) if part.get("type") == "text")
 
 
-def _parse(text: str) -> Dict:
+def _parse(text: str) -> dict:
     m = re.search(r"\{.*\}", text, re.S)
     if not m:
         raise ValueError("model reply did not contain JSON")
     return json.loads(m.group(0))
 
 
-def validate(raw: Dict, evidence_ids) -> Dict:
-    warnings: List[str] = []
+def validate(raw: dict, evidence_ids) -> dict:
+    warnings: list[str] = []
     claims = []
     for c in raw.get("claims", []):
         text = str(c.get("text", "")).strip()
@@ -93,8 +120,7 @@ def validate(raw: Dict, evidence_ids) -> Dict:
     return {"summary": str(raw.get("summary", "")), "claims": claims, "warnings": warnings}
 
 
-def explain(report: Dict, model: str = DEFAULT_MODEL,
-            transport: Optional[Callable[[str, str], str]] = None) -> Dict:
+def explain(report: dict, model: str = DEFAULT_MODEL, transport: Callable[[str, str], str] | None = None) -> dict:
     if not report["findings"]:
         return {"model": None, "summary": "No findings to explain.", "claims": [], "warnings": []}
     prompt = build_prompt(report)

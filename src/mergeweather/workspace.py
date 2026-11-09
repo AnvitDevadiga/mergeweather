@@ -4,6 +4,7 @@ Every workspace is a fresh directory under a temp root containing a marker file.
 Child processes and containers started from it are tracked so an interrupt
 (SIGINT / SIGTERM) can terminate them before the directory is removed.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -15,7 +16,6 @@ import subprocess
 import tempfile
 import threading
 from pathlib import Path
-from typing import Optional, Set
 
 from . import gitutil
 
@@ -23,9 +23,9 @@ MARKER = ".mergeweather-workspace"
 PREFIX = "mergeweather-"
 
 _lock = threading.Lock()
-_active_pgids: Set[int] = set()
-_active_containers: Set[str] = set()
-_active_workspaces: Set["Workspace"] = set()
+_active_pgids: set[int] = set()
+_active_containers: set[str] = set()
+_active_workspaces: set[Workspace] = set()
 
 
 def track_pgid(pgid: int) -> None:
@@ -83,7 +83,7 @@ def remove_tree(path: Path) -> None:
 
 
 class Workspace:
-    def __init__(self, root: Optional[Path] = None):
+    def __init__(self, root: Path | None = None):
         if root is not None:
             Path(root).mkdir(parents=True, exist_ok=True)
         self.path = Path(tempfile.mkdtemp(prefix=PREFIX, dir=str(root) if root else None))
@@ -95,7 +95,7 @@ class Workspace:
         with _lock:
             _active_workspaces.add(self)
 
-    def __enter__(self) -> "Workspace":
+    def __enter__(self) -> Workspace:
         return self
 
     def __exit__(self, *exc) -> None:
@@ -119,14 +119,13 @@ class Workspace:
         """
         self.repo.mkdir()
         gitutil.git(["init", "-q"], cwd=self.repo)
-        gitutil.git(["fetch", "-q", "--no-tags", "--no-write-fetch-head", str(source),
-                     "+refs/*:refs/mw-src/*"], cwd=self.repo)
+        gitutil.git(
+            ["fetch", "-q", "--no-tags", "--no-write-fetch-head", str(source), "+refs/*:refs/mw-src/*"], cwd=self.repo
+        )
         for sha in shas:
-            if gitutil.git(["cat-file", "-e", f"{sha}^{{commit}}"], cwd=self.repo,
-                           check=False).returncode != 0:
+            if gitutil.git(["cat-file", "-e", f"{sha}^{{commit}}"], cwd=self.repo, check=False).returncode != 0:
                 # commit not reachable from any ref (e.g. detached); fetch it directly
-                gitutil.git(["fetch", "-q", "--no-tags", "--no-write-fetch-head", str(source), sha],
-                            cwd=self.repo)
+                gitutil.git(["fetch", "-q", "--no-tags", "--no-write-fetch-head", str(source), sha], cwd=self.repo)
 
     def export_tree(self, tree: str) -> Path:
         """Materialize a tree as a plain directory (no .git, no credentials)."""
@@ -137,6 +136,7 @@ class Workspace:
         tar = self.path / f"{tree}.tar"
         gitutil.git(["archive", "--format=tar", tree], cwd=self.repo, stdout_path=tar)
         import tarfile
+
         with tarfile.open(tar) as tf:
             if hasattr(tarfile, "data_filter"):
                 tf.extractall(dest, filter="data")
@@ -158,15 +158,17 @@ atexit.register(_cleanup_all)
 
 def install_signal_handlers() -> None:
     """Turn SIGTERM/SIGHUP into KeyboardInterrupt so `with Workspace()` unwinds."""
+
     def handler(signum, _frame):
         kill_children()
         raise KeyboardInterrupt(f"signal {signum}")
+
     for sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
         if sig is not None:
             signal.signal(sig, handler)
 
 
-def clean_stale(root: Optional[Path] = None) -> int:
+def clean_stale(root: Path | None = None) -> int:
     """Remove leftover workspaces (e.g. after SIGKILL). Only touches marked dirs."""
     base = Path(root) if root else Path(tempfile.gettempdir())
     removed = 0

@@ -5,11 +5,11 @@ from the test output. Volatile details (numbers, hex addresses, temp paths,
 timings) are normalized away so the same assertion failing with slightly
 different values still matches.
 """
+
 from __future__ import annotations
 
 import hashlib
 import re
-from typing import List, Optional, Tuple
 
 DEFAULT_SIGNATURE_REGEX = r"(Error|Exception|FAIL|Failed|failed|assert|Traceback|panic)"
 
@@ -28,15 +28,16 @@ def normalize(line: str) -> str:
     return line.strip()
 
 
-def signature(stdout: str, stderr: str, regex: Optional[str] = None, max_lines: int = 5) -> List[str]:
+def signature(stdout: str, stderr: str, regex: str | None = None, max_lines: int = 5) -> list[str]:
     pat = re.compile(regex or DEFAULT_SIGNATURE_REGEX)
     lines = [l for l in (stdout + "\n" + stderr).splitlines() if pat.search(l)]
     lines = [l for l in lines if not l.strip().startswith("File ")]
     return [normalize(l) for l in lines[-max_lines:]]
 
 
-def fingerprint(outcome: str, exit_code: Optional[int], stdout: str, stderr: str,
-                regex: Optional[str] = None) -> Tuple[str, List[str]]:
+def fingerprint(
+    outcome: str, exit_code: int | None, stdout: str, stderr: str, regex: str | None = None
+) -> tuple[str, list[str]]:
     if outcome == "pass":
         return "pass", []
     if outcome == "timeout":

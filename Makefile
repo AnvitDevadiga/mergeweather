@@ -1,4 +1,4 @@
-.PHONY: install demo test build clean css
+.PHONY: install demo test lint format typecheck check build clean css
 install:
 	uv venv --allow-existing && uv pip install -e '.[dev]'
 
@@ -7,6 +7,19 @@ demo: install
 
 test: install
 	.venv/bin/pytest -q
+
+lint:
+	.venv/bin/ruff check .
+	.venv/bin/ruff format --check .
+
+format:
+	.venv/bin/ruff check --fix .
+	.venv/bin/ruff format .
+
+typecheck:
+	.venv/bin/mypy
+
+check: lint typecheck test
 
 build:
 	uv build

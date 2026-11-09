@@ -29,21 +29,23 @@ member was actually tested and definitively did not reproduce the fingerprint
 Otherwise it is ``smallest_found``. Neither claim implies global minimality:
 a smaller, disjoint set with the same fingerprint may exist.
 """
+
 from __future__ import annotations
 
 import itertools
 import time
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 from . import gitutil
 from .fingerprint import fingerprint as make_fingerprint
 from .runner import Runner
 from .workspace import Workspace
 
-Combo = Tuple[str, ...]
+Combo = tuple[str, ...]
 
 DEFINITIVE_NO_REPRO = "definitive"
 INCONCLUSIVE = "inconclusive"
@@ -54,19 +56,19 @@ class Branch:
     label: str
     ref: str
     sha: str = ""
-    changed_files: List[str] = field(default_factory=list)
+    changed_files: list[str] = field(default_factory=list)
     diff: str = ""
 
 
 @dataclass
 class Budget:
     max_runs: int = 60
-    max_seconds: Optional[float] = None
+    max_seconds: float | None = None
     max_size: int = 4
     used_runs: int = 0
     started: float = field(default_factory=time.monotonic)
     exhausted: bool = False
-    reason: Optional[str] = None
+    reason: str | None = None
 
     def try_charge(self) -> bool:
         if self.exhausted:
@@ -85,10 +87,10 @@ class Budget:
 class Run:
     id: str
     outcome: str  # pass | fail | timeout | error
-    exit_code: Optional[int]
+    exit_code: int | None
     duration: float
     fingerprint: str
-    signature: List[str]
+    signature: list[str]
     stdout_tail: str
     stderr_tail: str
 
@@ -98,18 +100,18 @@ class ComboRecord:
     id: str
     branches: Combo
     status: str = "pending"  # pass|fail|flaky|conflict|error|not_run
-    merge_commit: Optional[str] = None
-    tree: Optional[str] = None
-    merge_steps: List[Dict[str, str]] = field(default_factory=list)
-    conflict_files: List[str] = field(default_factory=list)
-    conflict_at: Optional[str] = None
-    runs: List[Run] = field(default_factory=list)
-    fingerprints: List[str] = field(default_factory=list)
-    reused_runs_from: Optional[str] = None
+    merge_commit: str | None = None
+    tree: str | None = None
+    merge_steps: list[dict[str, str]] = field(default_factory=list)
+    conflict_files: list[str] = field(default_factory=list)
+    conflict_at: str | None = None
+    runs: list[Run] = field(default_factory=list)
+    fingerprints: list[str] = field(default_factory=list)
+    reused_runs_from: str | None = None
     incomplete: bool = False
 
     @property
-    def primary_fingerprint(self) -> Optional[str]:
+    def primary_fingerprint(self) -> str | None:
         fails = [r.fingerprint for r in self.runs if r.outcome != "pass"]
         if not fails:
             return None
@@ -125,10 +127,21 @@ def combo_id(c: Combo) -> str:
 
 
 class Engine:
-    def __init__(self, repo: Path, base_ref: str, branches: Sequence[Tuple[str, str]],
-                 test_command: str, runner: Runner, budget: Budget, repeats: int = 3,
-                 fingerprint_regex: Optional[str] = None, workroot: Optional[Path] = None,
-                 full_first: bool = False, log=None, on_event=None):
+    def __init__(
+        self,
+        repo: Path,
+        base_ref: str,
+        branches: Sequence[tuple[str, str]],
+        test_command: str,
+        runner: Runner,
+        budget: Budget,
+        repeats: int = 3,
+        fingerprint_regex: str | None = None,
+        workroot: Path | None = None,
+        full_first: bool = False,
+        log=None,
+        on_event=None,
+    ):
         if not branches:
             raise ConfigError("at least one branch is required")
         labels = [b[0] for b in branches]
@@ -141,7 +154,7 @@ class Engine:
         self.repo = gitutil.ensure_repo(Path(repo))
         self.base = Branch("base", base_ref)
         self.branches = {l: Branch(l, r) for l, r in branches}
-        self.order: List[str] = sorted(labels)  # canonical order
+        self.order: list[str] = sorted(labels)  # canonical order
         self.command = test_command
         self.runner = runner
         self.budget = budget
@@ -151,12 +164,12 @@ class Engine:
         self.full_first = full_first
         self.log = log or (lambda msg: None)
         self.emit = on_event or (lambda kind, **data: None)
-        self.combos: Dict[Combo, ComboRecord] = {}
-        self.tree_runs: Dict[str, ComboRecord] = {}
-        self.pruned: List[Dict[str, object]] = []
-        self.findings: List[Dict[str, object]] = []
+        self.combos: dict[Combo, ComboRecord] = {}
+        self.tree_runs: dict[str, ComboRecord] = {}
+        self.pruned: list[dict[str, object]] = []
+        self.findings: list[dict[str, Any]] = []
         self.base_ok = False
-        self.ws: Optional[Workspace] = None
+        self.ws: Workspace | None = None
 
     # ------------------------------------------------------------------ setup
     def resolve(self) -> None:
@@ -167,7 +180,8 @@ class Engine:
             if not gitutil.is_ancestor(self.repo, self.base.sha, b.sha):
                 raise ConfigError(
                     f"base {self.base.ref} ({self.base.sha[:12]}) is not an ancestor of "
-                    f"branch {b.label} ({b.ref}); pass the true common base with --base")
+                    f"branch {b.label} ({b.ref}); pass the true common base with --base"
+                )
             b.changed_files = gitutil.changed_files(self.repo, self.base.sha, b.sha)
             b.diff = gitutil.diff_text(self.repo, self.base.sha, b.sha)
 
@@ -176,17 +190,25 @@ class Engine:
         return tuple(l for l in self.order if l in s)
 
     # ------------------------------------------------------------- execution
+    @property
+    def workspace(self) -> Workspace:
+        if self.ws is None:
+            raise RuntimeError("workspace is only available inside Engine.run()")
+        return self.ws
+
     def _build(self, rec: ComboRecord) -> None:
-        repo = self.ws.repo
+        repo = self.workspace.repo
         gitutil.git(["checkout", "-q", "-f", "--detach", self.base.sha], cwd=repo)
         gitutil.git(["clean", "-qfdx"], cwd=repo)
         for label in rec.branches:
             sha = self.branches[label].sha
-            proc = gitutil.git(["merge", "--no-ff", "--no-edit", "-q", "-m",
-                                f"mergeweather: merge {label}", sha], cwd=repo, check=False)
+            proc = gitutil.git(
+                ["merge", "--no-ff", "--no-edit", "-q", "-m", f"mergeweather: merge {label}", sha],
+                cwd=repo,
+                check=False,
+            )
             if proc.returncode != 0:
-                files = gitutil.git(["diff", "--name-only", "--diff-filter=U"], cwd=repo,
-                                    check=False).stdout.split()
+                files = gitutil.git(["diff", "--name-only", "--diff-filter=U"], cwd=repo, check=False).stdout.split()
                 gitutil.git(["merge", "--abort"], cwd=repo, check=False)
                 if not files:
                     raise gitutil.GitError(f"merge of {label} failed: {proc.stderr.strip()}")
@@ -198,7 +220,8 @@ class Engine:
         rec.tree = gitutil.git(["rev-parse", "HEAD^{tree}"], cwd=repo).stdout.strip()
 
     def _run_once(self, rec: ComboRecord) -> None:
-        workdir = self.ws.export_tree(rec.tree)
+        assert rec.tree is not None, "combination must be built before it is run"
+        workdir = self.workspace.export_tree(rec.tree)
         raw = self.runner.run(workdir, self.command)
         if raw.infra_error:
             outcome = "error"
@@ -207,8 +230,18 @@ class Engine:
         else:
             outcome = "pass" if raw.exit_code == 0 else "fail"
         fp, sig = make_fingerprint(outcome, raw.exit_code, raw.stdout, raw.stderr, self.fp_regex)
-        rec.runs.append(Run(f"{rec.id}#{len(rec.runs) + 1}", outcome, raw.exit_code, raw.duration,
-                            fp, sig, raw.stdout, raw.stderr + (raw.infra_error or "")))
+        rec.runs.append(
+            Run(
+                f"{rec.id}#{len(rec.runs) + 1}",
+                outcome,
+                raw.exit_code,
+                raw.duration,
+                fp,
+                sig,
+                raw.stdout,
+                raw.stderr + (raw.infra_error or ""),
+            )
+        )
         self.log(f"  run {rec.id}#{len(rec.runs)}: {outcome} {'' if fp == 'pass' else fp}")
         self.emit("run", combo=rec, run=rec.runs[-1])
 
@@ -243,6 +276,7 @@ class Engine:
                 self.log(f"  {rec.id}: textual merge conflict in {', '.join(rec.conflict_files)}")
                 self.emit("combo", combo=rec)
                 return rec
+            assert rec.tree is not None
             twin = self.tree_runs.get(rec.tree)
             if twin is not None and twin is not rec:
                 rec.reused_runs_from = twin.id
@@ -282,8 +316,10 @@ class Engine:
             return DEFINITIVE_NO_REPRO
         return INCONCLUSIVE
 
-    def reduce(self, start: ComboRecord) -> Dict[str, object]:
+    def reduce(self, start: ComboRecord) -> dict[str, Any]:
         target = start.primary_fingerprint
+        if target is None:
+            raise ValueError(f"{start.id} has no failing run to reduce")
         current = start.branches
         steps = []
         changed = True
@@ -303,29 +339,41 @@ class Engine:
             sub = tuple(l for l in current if l != label)
             rec = self.evaluate(sub, confirm=True)
             verdict = self._removal_verdict(rec, target)
-            checks.append({"removed": label, "combination": rec.id, "status": rec.status,
-                           "incomplete": rec.incomplete, "verdict": verdict})
+            checks.append(
+                {
+                    "removed": label,
+                    "combination": rec.id,
+                    "status": rec.status,
+                    "incomplete": rec.incomplete,
+                    "verdict": verdict,
+                }
+            )
             if verdict != DEFINITIVE_NO_REPRO:
-                reasons.append(f"removing {label} -> {rec.id} is {rec.status}"
-                               f"{' (budget-limited)' if rec.incomplete else ''}")
+                reasons.append(
+                    f"removing {label} -> {rec.id} is {rec.status}{' (budget-limited)' if rec.incomplete else ''}"
+                )
         stable = final.status == "fail" and not final.incomplete
         if not stable:
-            reasons.append(f"{final.id} itself is {final.status}"
-                           f"{' (budget-limited)' if final.incomplete else ''}")
+            reasons.append(f"{final.id} itself is {final.status}{' (budget-limited)' if final.incomplete else ''}")
         minimality = "proven_1_minimal" if not reasons else "smallest_found"
         k = len(current)
-        kind = ("single-branch failure" if k == 1 else
-                "pairwise interaction" if k == 2 else f"{k}-way interaction")
+        kind = "single-branch failure" if k == 1 else "pairwise interaction" if k == 2 else f"{k}-way interaction"
         return {
-            "branches": list(current), "combination": final.id, "fingerprint": target,
-            "kind": kind, "minimality": minimality, "minimality_caveats": reasons,
+            "branches": list(current),
+            "combination": final.id,
+            "fingerprint": target,
+            "kind": kind,
+            "minimality": minimality,
+            "minimality_caveats": reasons,
             "stability": "stable" if final.status == "fail" else "unstable",
-            "reduced_from": start.id, "reduction_steps": steps, "removal_checks": checks,
+            "reduced_from": start.id,
+            "reduction_steps": steps,
+            "removal_checks": checks,
             "signature": next((r.signature for r in final.runs if r.fingerprint == target), []),
         }
 
     # -------------------------------------------------------------- explore
-    def _pruned_by(self, combo: Combo) -> Optional[str]:
+    def _pruned_by(self, combo: Combo) -> str | None:
         for k in range(1, len(combo)):
             for sub in itertools.combinations(combo, k):
                 rec = self.combos.get(sub)
@@ -366,12 +414,16 @@ class Engine:
             ws.import_commits(self.repo, [self.base.sha] + [b.sha for b in self.branches.values()])
             self.explore()
             if self.base_ok:
-                seen = set()
-                failing = sorted((r for r in self.combos.values() if r.status in ("fail", "flaky")
-                                  and r.branches), key=lambda r: (len(r.branches), r.branches))
+                seen: set[tuple[tuple[str, ...], str]] = set()
+                failing = sorted(
+                    (r for r in self.combos.values() if r.status in ("fail", "flaky") and r.branches),
+                    key=lambda r: (len(r.branches), r.branches),
+                )
                 for rec in failing:
-                    if any(set(f["branches"]) <= set(rec.branches) and
-                           f["fingerprint"] == rec.primary_fingerprint for f in self.findings):
+                    if any(
+                        set(f["branches"]) <= set(rec.branches) and f["fingerprint"] == rec.primary_fingerprint
+                        for f in self.findings
+                    ):
                         continue  # already explained by a smaller finding
                     self.log(f"reducing {rec.id}")
                     self.emit("phase", name=f"reducing {rec.id}")
@@ -383,7 +435,7 @@ class Engine:
                         self.findings.append(finding)
             self.ws = None
 
-    def unexplored(self) -> List[str]:
+    def unexplored(self) -> list[str]:
         out = []
         n = len(self.order)
         pruned = {p["combination"] for p in self.pruned}

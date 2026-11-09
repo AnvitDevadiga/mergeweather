@@ -1,14 +1,28 @@
-## What
+<!-- Thanks for contributing to MergeWeather! Please fill in the sections below. -->
 
-<!-- What does this PR change? -->
+## Summary
 
-## Why
+<!-- What does this PR change, and why? -->
 
-<!-- Link an issue or describe the problem. -->
+Closes #
+
+## Type of change
+
+- [ ] 🐛 Bug fix
+- [ ] ✨ New feature
+- [ ] ♻️ Refactor (no behavior change)
+- [ ] 📝 Docs
+- [ ] 🔧 CI / packaging
+
+## How was this tested?
+
+<!-- Commands you ran, new or updated tests, screenshots for report or dashboard changes. -->
 
 ## Checklist
 
-- [ ] `make test` passes
+- [ ] `make check` passes (ruff lint, ruff format, mypy, pytest)
 - [ ] Tests added or updated for behavior changes
-- [ ] README updated for user-facing changes
-- [ ] `make css` run and `report.css` committed (if report classes changed)
+- [ ] README / CONTRIBUTING updated for user-facing changes
+- [ ] If report classes changed: ran `make css` and committed `report.css`
+- [ ] The core guarantees still hold: the user's repo is never modified, results are
+      deterministic, minimality claims stay honest, and interrupts clean up

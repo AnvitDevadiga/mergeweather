@@ -5,8 +5,8 @@ import sys
 import time
 
 import pytest
-
 from conftest import ROOT, make_repo
+
 from mergeweather import report
 from mergeweather.cli import main
 from mergeweather.engine import ConfigError
@@ -14,8 +14,11 @@ from mergeweather.gitutil import InvalidRef
 
 
 def simple_repo(tmp_path, branches=None):
-    return make_repo(tmp_path / "r", {"t.py": "print('ok')\n", "v.txt": "1\n"},
-                     branches or {"a": {"a.txt": "a"}, "b": {"b.txt": "b"}})
+    return make_repo(
+        tmp_path / "r",
+        {"t.py": "print('ok')\n", "v.txt": "1\n"},
+        branches or {"a": {"a.txt": "a"}, "b": {"b.txt": "b"}},
+    )
 
 
 # --- invalid refs ---------------------------------------------------------
@@ -45,9 +48,26 @@ def test_base_not_ancestor(tmp_path, make_engine):
 
 def test_cli_invalid_ref_exit_code(tmp_path, capsys):
     repo = simple_repo(tmp_path)
-    code = main(["run", "--repo", str(repo), "--base", "main", "-b", "missing", "--test-cmd", "true",
-                 "--sandbox", "local", "--allow-unsandboxed", "--out", str(tmp_path / "o"),
-                 "--workroot", str(tmp_path / "w")])
+    code = main(
+        [
+            "run",
+            "--repo",
+            str(repo),
+            "--base",
+            "main",
+            "-b",
+            "missing",
+            "--test-cmd",
+            "true",
+            "--sandbox",
+            "local",
+            "--allow-unsandboxed",
+            "--out",
+            str(tmp_path / "o"),
+            "--workroot",
+            str(tmp_path / "w"),
+        ]
+    )
     assert code == 2
     cap = capsys.readouterr()
     assert "does not resolve" in cap.out + cap.err
@@ -55,8 +75,9 @@ def test_cli_invalid_ref_exit_code(tmp_path, capsys):
 
 def test_local_requires_opt_in(tmp_path):
     repo = simple_repo(tmp_path)
-    assert main(["run", "--repo", str(repo), "--base", "main", "-b", "a", "--test-cmd", "true",
-                 "--sandbox", "local"]) == 2
+    assert (
+        main(["run", "--repo", str(repo), "--base", "main", "-b", "a", "--test-cmd", "true", "--sandbox", "local"]) == 2
+    )
 
 
 # --- merge conflicts ------------------------------------------------------
@@ -80,23 +101,28 @@ def test_flaky_outcome_detected(tmp_path, make_engine):
     counter = tmp_path / "counter"
     counter.write_text("0")
     # fails on 1st, 3rd, ... invocation whenever b.txt is present
-    script = (f"import os,sys\np={str(counter)!r}\nn=int(open(p).read())\n"
-              "if not os.path.exists('b.txt'): sys.exit(0)\n"
-              "open(p,'w').write(str(n+1))\n"
-              "print('FAIL: AssertionError flaky') if n%2==0 else None\nsys.exit(1 if n%2==0 else 0)\n")
+    script = (
+        f"import os,sys\np={str(counter)!r}\nn=int(open(p).read())\n"
+        "if not os.path.exists('b.txt'): sys.exit(0)\n"
+        "open(p,'w').write(str(n+1))\n"
+        "print('FAIL: AssertionError flaky') if n%2==0 else None\nsys.exit(1 if n%2==0 else 0)\n"
+    )
     repo = make_repo(tmp_path / "r", {"t.py": script}, {"a": {"a.txt": "a"}, "b": {"b.txt": "b"}})
     eng = make_engine(repo, ["a", "b"], "python3 t.py")
     eng.run()
     assert eng.combos[("b",)].status == "flaky"
-    f = [f for f in eng.findings if f["branches"] == ["b"]][0]
+    f = next(f for f in eng.findings if f["branches"] == ["b"])
     assert f["stability"] == "unstable"
     assert f["minimality"] == "smallest_found"
     assert "b" in report.build(eng, [])["flaky_combinations"]
 
 
 def test_stable_failure_repeated(tmp_path, make_engine):
-    repo = make_repo(tmp_path / "r", {"t.py": "import os,sys\nsys.exit(1 if os.path.exists('b.txt') else 0)\n"},
-                     {"b": {"b.txt": "b"}})
+    repo = make_repo(
+        tmp_path / "r",
+        {"t.py": "import os,sys\nsys.exit(1 if os.path.exists('b.txt') else 0)\n"},
+        {"b": {"b.txt": "b"}},
+    )
     eng = make_engine(repo, ["b"], "python3 t.py", repeats=4)
     eng.run()
     assert len(eng.combos[("b",)].runs) == 4
@@ -107,8 +133,12 @@ def test_stable_failure_repeated(tmp_path, make_engine):
 # --- budget exhaustion ----------------------------------------------------
 def test_budget_exhaustion(tmp_path, fixtures, make_engine):
     repo, _ = fixtures
-    eng = make_engine(repo, ["feature/fraud-check", "feature/tax-service", "feature/loyalty"],
-                      "python3 integration_test.py", max_runs=5)
+    eng = make_engine(
+        repo,
+        ["feature/fraud-check", "feature/tax-service", "feature/loyalty"],
+        "python3 integration_test.py",
+        max_runs=5,
+    )
     eng.run()
     assert eng.budget.exhausted and eng.budget.used_runs == 5
     rep = report.build(eng, [])
@@ -121,16 +151,22 @@ def test_budget_exhaustion(tmp_path, fixtures, make_engine):
 def test_budget_exhaustion_during_reduction(tmp_path, fixtures, make_engine):
     """Triple found but too little budget to prove minimality -> smallest_found, not proven."""
     repo, _ = fixtures
-    eng = make_engine(repo, ["feature/fraud-check", "feature/tax-service", "feature/loyalty"],
-                      "python3 integration_test.py", max_runs=13, full_first=True)
+    eng = make_engine(
+        repo,
+        ["feature/fraud-check", "feature/tax-service", "feature/loyalty"],
+        "python3 integration_test.py",
+        max_runs=13,
+        full_first=True,
+    )
     eng.run()
     assert eng.budget.exhausted
     assert eng.findings and all(f["minimality"] == "smallest_found" for f in eng.findings)
 
 
 def test_timeout_is_a_distinct_failure(tmp_path, make_engine):
-    repo = make_repo(tmp_path / "r", {"t.py": "import os,time\nos.path.exists('s.txt') and time.sleep(30)\n"},
-                     {"s": {"s.txt": "s"}})
+    repo = make_repo(
+        tmp_path / "r", {"t.py": "import os,time\nos.path.exists('s.txt') and time.sleep(30)\n"}, {"s": {"s.txt": "s"}}
+    )
     eng = make_engine(repo, ["s"], "python3 t.py", repeats=1, timeout=1)
     eng.run()
     assert eng.combos[("s",)].runs[0].outcome == "timeout"
@@ -147,8 +183,11 @@ def test_base_failing_stops(tmp_path, make_engine):
 
 def test_credentials_not_passed(tmp_path, make_engine, monkeypatch):
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "s3cr3t")
-    repo = make_repo(tmp_path / "r", {"t.py": "import os,sys\nsys.exit(1 if 'AWS_SECRET_ACCESS_KEY' in os.environ else 0)\n"},
-                     {"a": {"a.txt": "a"}})
+    repo = make_repo(
+        tmp_path / "r",
+        {"t.py": "import os,sys\nsys.exit(1 if 'AWS_SECRET_ACCESS_KEY' in os.environ else 0)\n"},
+        {"a": {"a.txt": "a"}},
+    )
     eng = make_engine(repo, ["a"], "python3 t.py")
     eng.run()
     assert eng.base_ok and eng.findings == []
@@ -162,17 +201,39 @@ def test_cleanup_after_interrupt(tmp_path, sig):
     marker = tmp_path / "started"
     cmd = f"touch {marker}; sleep 60"
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mergeweather", "run", "--repo", str(repo), "--base", "main", "-b", "a",
-         "--test-cmd", cmd, "--sandbox", "local", "--allow-unsandboxed", "--workroot", str(work),
-         "--out", str(tmp_path / "o"), "-q"],
-        env={**os.environ, "PYTHONPATH": str(ROOT / "src")}, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        [
+            sys.executable,
+            "-m",
+            "mergeweather",
+            "run",
+            "--repo",
+            str(repo),
+            "--base",
+            "main",
+            "-b",
+            "a",
+            "--test-cmd",
+            cmd,
+            "--sandbox",
+            "local",
+            "--allow-unsandboxed",
+            "--workroot",
+            str(work),
+            "--out",
+            str(tmp_path / "o"),
+            "-q",
+        ],
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
     deadline = time.time() + 30
     while not marker.exists() and time.time() < deadline:
         time.sleep(0.1)
     assert marker.exists(), proc.stderr.read() if proc.poll() is not None else "never started"
     assert any(work.iterdir())
     proc.send_signal(sig)
-    out, err = proc.communicate(timeout=30)
+    _out, err = proc.communicate(timeout=30)
     assert proc.returncode == 130, err
     assert list(work.iterdir()) == []
     # the sleeping test process was killed too
@@ -184,6 +245,7 @@ def test_cleanup_after_interrupt(tmp_path, sig):
 
 def test_clean_stale(tmp_path):
     from mergeweather.workspace import MARKER, clean_stale
+
     d = tmp_path / "mergeweather-stale"
     d.mkdir()
     (d / MARKER).write_text("999999")

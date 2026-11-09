@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 README and usage docs
+    url: https://github.com/AnvitDevadiga/merge-weather#readme
+    about: Check the docs for options, exit codes and the sandbox model before opening an issue.
+  - name: 🤝 Contributing guide
+    url: https://github.com/AnvitDevadiga/merge-weather/blob/main/CONTRIBUTING.md
+    about: Dev setup, make targets and how to submit a PR.

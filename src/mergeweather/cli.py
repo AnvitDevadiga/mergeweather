@@ -1,21 +1,21 @@
 """Command-line interface."""
+
 from __future__ import annotations
 
 import argparse
 import json
-import shlex
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 from rich.console import Console
 from rich.panel import Panel
 
-from . import __version__, report as report_mod, workspace
+from . import __version__, workspace
+from . import report as report_mod
 from .console import Dashboard, print_summary
 from .engine import Budget, ConfigError, Engine
 from .gitutil import GitError, InvalidRef
-from .runner import DockerRunner, Limits, LocalRunner
+from .runner import DockerRunner, Limits, LocalRunner, Runner
 
 EXIT_OK, EXIT_FINDINGS, EXIT_USAGE, EXIT_BASE, EXIT_INCONCLUSIVE, EXIT_INTERRUPTED = 0, 1, 2, 3, 4, 130
 
@@ -28,8 +28,10 @@ def _branch_arg(s: str):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="mergeweather", description="Detect behavioral integration "
-                                "failures across independently passing Git branches.")
+    p = argparse.ArgumentParser(
+        prog="mergeweather",
+        description="Detect behavioral integration failures across independently passing Git branches.",
+    )
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -41,15 +43,15 @@ def build_parser() -> argparse.ArgumentParser:
         r.add_argument("--full-first", action="store_true", help="test the full branch set right after base")
         r.add_argument("--fingerprint-regex", default=None, help="regex selecting signature lines")
         r.add_argument("--sandbox", choices=["docker", "local", "auto"], default="auto" if demo else "docker")
-        r.add_argument("--allow-unsandboxed", action="store_true",
-                       help="permit the local backend (no network isolation)")
+        r.add_argument(
+            "--allow-unsandboxed", action="store_true", help="permit the local backend (no network isolation)"
+        )
         r.add_argument("--image", default="python:3.12-slim", help="container image")
         r.add_argument("--timeout", type=float, default=120.0, help="per-run timeout seconds")
         r.add_argument("--memory", type=int, default=1024, help="memory limit MB")
         r.add_argument("--cpus", type=float, default=1.0)
         r.add_argument("--pass-env", action="append", default=[], help="env var to pass through")
-        r.add_argument("--out", default="mergeweather-demo" if demo else "mergeweather-report",
-                       help="output directory")
+        r.add_argument("--out", default="mergeweather-demo" if demo else "mergeweather-report", help="output directory")
         r.add_argument("--formats", default="json,md,html")
         r.add_argument("--workroot", default=None, help="parent dir for disposable workspaces")
         r.add_argument("--quiet", "-q", action="store_true", help="only print the verdict")
@@ -58,8 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("run", help="analyze branch combinations")
     r.add_argument("--repo", default=".", help="repository path (never modified)")
     r.add_argument("--base", required=True, help="explicit common base commit/ref")
-    r.add_argument("--branch", "-b", action="append", required=True, type=_branch_arg,
-                   metavar="[LABEL=]REF", help="branch reference (repeatable)")
+    r.add_argument(
+        "--branch",
+        "-b",
+        action="append",
+        required=True,
+        type=_branch_arg,
+        metavar="[LABEL=]REF",
+        help="branch reference (repeatable)",
+    )
     r.add_argument("--test-cmd", required=True, help="integration test command (run via sh -c)")
     exec_opts(r)
 
@@ -87,20 +96,26 @@ def _console() -> Console:
     return Console(highlight=False)
 
 
-def _make_runner(a) -> Optional[object]:
+def _make_runner(a) -> Runner | None:
     limits = Limits(timeout=a.timeout, memory_mb=a.memory, cpus=a.cpus)
     mode = a.sandbox
     if mode == "auto":
         mode = "docker" if DockerRunner.available() else "local"
     if mode == "docker":
         if not DockerRunner.available():
-            print("error: Docker is not available. Start Docker, or use --sandbox local "
-                  "--allow-unsandboxed for trusted code.", file=sys.stderr)
+            print(
+                "error: Docker is not available. Start Docker, or use --sandbox local "
+                "--allow-unsandboxed for trusted code.",
+                file=sys.stderr,
+            )
             return None
         return DockerRunner(limits, image=a.image, pass_env=a.pass_env)
     if not a.allow_unsandboxed:
-        print("error: the local backend does not isolate network/filesystem; "
-              "pass --allow-unsandboxed to use it for trusted code.", file=sys.stderr)
+        print(
+            "error: the local backend does not isolate network/filesystem; "
+            "pass --allow-unsandboxed to use it for trusted code.",
+            file=sys.stderr,
+        )
         return None
     print("warning: running repository code WITHOUT container isolation", file=sys.stderr)
     return LocalRunner(limits, pass_env=a.pass_env)
@@ -115,11 +130,20 @@ def _execute(a, argv, console: Console, title: str = "MergeWeather"):
     log = (lambda m: None) if (a.quiet or not plain) else (lambda m: console.print(m, markup=False, highlight=False))
     dash = None if (a.quiet or plain) else Dashboard(console, title=title)
     try:
-        engine = Engine(Path(a.repo), a.base, a.branch, a.test_cmd, runner,
-                        Budget(max_runs=a.max_runs, max_seconds=a.max_seconds, max_size=a.max_size),
-                        repeats=a.repeats, fingerprint_regex=a.fingerprint_regex,
-                        workroot=Path(a.workroot) if a.workroot else None,
-                        full_first=a.full_first, log=log, on_event=dash)
+        engine = Engine(
+            Path(a.repo),
+            a.base,
+            a.branch,
+            a.test_cmd,
+            runner,
+            Budget(max_runs=a.max_runs, max_seconds=a.max_seconds, max_size=a.max_size),
+            repeats=a.repeats,
+            fingerprint_regex=a.fingerprint_regex,
+            workroot=Path(a.workroot) if a.workroot else None,
+            full_first=a.full_first,
+            log=log,
+            on_event=dash,
+        )
         if dash:
             dash.max_runs = a.max_runs
             with dash:
@@ -129,14 +153,17 @@ def _execute(a, argv, console: Console, title: str = "MergeWeather"):
     except (InvalidRef, ConfigError, GitError) as ex:
         console.print(f"[bold red]error:[/] {ex}", highlight=False)
         return None, EXIT_USAGE
-    rep = report_mod.build(engine, ["mergeweather"] + argv)
+    rep = report_mod.build(engine, ["mergeweather", *argv])
     paths = report_mod.write(rep, Path(a.out), tuple(x.strip() for x in a.formats.split(",")))
     if a.quiet:
         console.print(f"verdict: {rep['verdict']}", highlight=False)
     else:
         print_summary(rep, console, paths)
-    code = {"base-failing": EXIT_BASE, "interactions-found": EXIT_FINDINGS,
-            "inconclusive-budget": EXIT_INCONCLUSIVE}.get(rep["verdict"], EXIT_OK)
+    code = {
+        "base-failing": EXIT_BASE,
+        "interactions-found": EXIT_FINDINGS,
+        "inconclusive-budget": EXIT_INCONCLUSIVE,
+    }.get(rep["verdict"], EXIT_OK)
     return rep, code
 
 
@@ -147,25 +174,34 @@ def cmd_run(a, argv) -> int:
 def cmd_demo(a, argv) -> int:
     import tempfile
     import webbrowser
+
     from .fixtures import build_all
+
     console = _console()
     out = Path(a.out).resolve()
     with tempfile.TemporaryDirectory(prefix="mergeweather-demo-") as tmp:
         three_way, harmless = build_all(Path(tmp))
-        repo, branches = (harmless, ["cache=feature/cache-warm", "docs=feature/docs",
-                                     "log=feature/log-wording"]) if a.harmless else \
-            (three_way, ["fraud=feature/fraud-check", "tax=feature/tax-service", "loyalty=feature/loyalty"])
-        console.print(Panel.fit(
-            "[bold]A checkout service with a 250 ms latency SLA.[/]\n"
-            "Base = 100 ms. Three feature branches each add a 60 ms stage in their own file.\n"
-            "Each branch passes alone (160 ms), every pair passes (220 ms)…\n"
-            "[dim]…but what happens when all three land in the same release?[/]"
-            if not a.harmless else
-            "[bold]Three harmless branches[/]: a 20 ms stage, docs, and a log tweak.",
-            title="🌤  MergeWeather demo", border_style="cyan"))
+        repo, branches = (
+            (harmless, ["cache=feature/cache-warm", "docs=feature/docs", "log=feature/log-wording"])
+            if a.harmless
+            else (three_way, ["fraud=feature/fraud-check", "tax=feature/tax-service", "loyalty=feature/loyalty"])
+        )
+        console.print(
+            Panel.fit(
+                "[bold]A checkout service with a 250 ms latency SLA.[/]\n"
+                "Base = 100 ms. Three feature branches each add a 60 ms stage in their own file.\n"
+                "Each branch passes alone (160 ms), every pair passes (220 ms)…\n"
+                "[dim]…but what happens when all three land in the same release?[/]"
+                if not a.harmless
+                else "[bold]Three harmless branches[/]: a 20 ms stage, docs, and a log tweak.",
+                title="🌤  MergeWeather demo",
+                border_style="cyan",
+            )
+        )
         if a.sandbox == "auto" and not DockerRunner.available():
-            console.print("[yellow]Docker not available: running the bundled (trusted) fixture "
-                          "with the local backend.[/]")
+            console.print(
+                "[yellow]Docker not available: running the bundled (trusted) fixture with the local backend.[/]"
+            )
             a.sandbox, a.allow_unsandboxed = "local", True
         else:
             a.allow_unsandboxed = True
@@ -184,6 +220,7 @@ def cmd_demo(a, argv) -> int:
 
 def cmd_explain(a) -> int:
     from . import explain
+
     path = Path(a.report)
     rep = json.loads(path.read_text())
     if a.dry_run:
@@ -208,7 +245,7 @@ def cmd_render(a) -> int:
     return EXIT_OK
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     a = build_parser().parse_args(argv)
     workspace.install_signal_handlers()

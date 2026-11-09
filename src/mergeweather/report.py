@@ -1,14 +1,14 @@
 """Report model and exporters (JSON, Markdown, static HTML)."""
+
 from __future__ import annotations
 
 import json
 import shlex
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List
 
 from . import __version__
-from .engine import Engine, combo_id
+from .engine import Engine
 
 SCHEMA = "mergeweather.report/v1"
 
@@ -16,13 +16,15 @@ MINIMALITY_NOTE = (
     "'proven_1_minimal' means: the set fails stably and removing any single member was tested "
     "and did not reproduce the same failure fingerprint. 'smallest_found' means that proof is "
     "incomplete (budget, conflicts, flakiness or errors). Neither implies global minimality: "
-    "another smaller or disjoint set could produce the same failure.")
+    "another smaller or disjoint set could produce the same failure."
+)
 
 ORDER_NOTE = (
     "Each combination is built from the pinned base commit by merging member branch commits one "
     "at a time with `git merge --no-ff`, in ascending lexicographic order of branch labels, with a "
     "fixed committer identity and timestamp (2000-01-01T00:00:00Z), so merge commits and trees "
-    "are reproducible.")
+    "are reproducible."
+)
 
 
 def reproduction(engine: Engine, branches) -> str:
@@ -34,13 +36,14 @@ def reproduction(engine: Engine, branches) -> str:
         "cd ../mw-repro",
     ]
     for label in engine.canonical(branches):
-        lines.append(f"git merge --no-ff --no-edit -m {shlex.quote('mergeweather: merge ' + label)} "
-                     f"{engine.branches[label].sha}")
+        lines.append(
+            f"git merge --no-ff --no-edit -m {shlex.quote('mergeweather: merge ' + label)} {engine.branches[label].sha}"
+        )
     lines.append(engine.command)
     return "\n".join(lines)
 
 
-def build(engine: Engine, argv: List[str]) -> Dict:
+def build(engine: Engine, argv: list[str]) -> dict:
     combos = []
     for rec in sorted(engine.combos.values(), key=lambda r: (len(r.branches), r.branches)):
         d = asdict(rec)
@@ -53,12 +56,18 @@ def build(engine: Engine, argv: List[str]) -> Dict:
     for f in engine.findings:
         f = dict(f)
         f["reproduction"] = reproduction(engine, f["branches"])
-        f["evidence"] = [f"combo:{f['combination']}"] + [f"combo:{c['combination']}"
-                                                         for c in f["removal_checks"]]
+        f["evidence"] = [f"combo:{f['combination']}"] + [f"combo:{c['combination']}" for c in f["removal_checks"]]
         findings.append(f)
-    conflicts = [{"combination": r.id, "branches": list(r.branches), "files": r.conflict_files,
-                  "conflict_while_merging": r.conflict_at}
-                 for r in engine.combos.values() if r.status == "conflict"]
+    conflicts = [
+        {
+            "combination": r.id,
+            "branches": list(r.branches),
+            "files": r.conflict_files,
+            "conflict_while_merging": r.conflict_at,
+        }
+        for r in engine.combos.values()
+        if r.status == "conflict"
+    ]
     flaky = [r.id for r in engine.combos.values() if r.status == "flaky"]
     unexplored = engine.unexplored()
     if not engine.base_ok:
@@ -76,10 +85,17 @@ def build(engine: Engine, argv: List[str]) -> Dict:
         "inputs": {
             "repository": str(engine.repo),
             "base": {"ref": engine.base.ref, "commit": engine.base.sha},
-            "branches": [{"label": b.label, "ref": b.ref, "commit": b.sha,
-                          "changed_files": b.changed_files, "diff": b.diff,
-                          "evidence_id": f"diff:{b.label}"}
-                         for b in (engine.branches[l] for l in engine.order)],
+            "branches": [
+                {
+                    "label": b.label,
+                    "ref": b.ref,
+                    "commit": b.sha,
+                    "changed_files": b.changed_files,
+                    "diff": b.diff,
+                    "evidence_id": f"diff:{b.label}",
+                }
+                for b in (engine.branches[l] for l in engine.order)
+            ],
             "test_command": engine.command,
             "repeats": engine.repeats,
             "fingerprint_regex": engine.fp_regex,
@@ -87,10 +103,15 @@ def build(engine: Engine, argv: List[str]) -> Dict:
         },
         "canonical_order": {"labels": engine.order, "description": ORDER_NOTE},
         "isolation": engine.runner.isolation(),
-        "budget": {"max_runs": engine.budget.max_runs, "max_seconds": engine.budget.max_seconds,
-                   "max_size": engine.budget.max_size, "used_runs": engine.budget.used_runs,
-                   "exhausted": engine.budget.exhausted, "reason": engine.budget.reason,
-                   "unexplored": unexplored},
+        "budget": {
+            "max_runs": engine.budget.max_runs,
+            "max_seconds": engine.budget.max_seconds,
+            "max_size": engine.budget.max_size,
+            "used_runs": engine.budget.used_runs,
+            "exhausted": engine.budget.exhausted,
+            "reason": engine.budget.reason,
+            "unexplored": unexplored,
+        },
         "minimality_note": MINIMALITY_NOTE,
         "findings": findings,
         "conflicts": conflicts,
@@ -101,7 +122,7 @@ def build(engine: Engine, argv: List[str]) -> Dict:
 
 
 # ------------------------------------------------------------------ markdown
-def _mermaid(report: Dict) -> str:
+def _mermaid(report: dict) -> str:
     lines = ["```mermaid", "graph LR"]
     for b in report["inputs"]["branches"]:
         lines.append(f'  {_nid(b["label"])}["{b["label"]}"]')
@@ -128,32 +149,38 @@ def _nid(label: str) -> str:
     return "b_" + "".join(ch if ch.isalnum() else "_" for ch in label)
 
 
-def to_markdown(report: Dict) -> str:
+def to_markdown(report: dict) -> str:
     inp = report["inputs"]
-    out = [f"# MergeWeather report", "",
-           f"**Verdict:** `{report['verdict']}`  ",
-           f"**Repository:** `{inp['repository']}`  ",
-           f"**Base:** `{inp['base']['ref']}` @ `{inp['base']['commit']}`  ",
-           f"**Test command:** `{inp['test_command']}`  ",
-           f"**Sandbox:** {report['isolation']['backend']} "
-           f"(network isolated: {report['isolation']['network_isolated']})", ""]
+    out = [
+        "# MergeWeather report",
+        "",
+        f"**Verdict:** `{report['verdict']}`  ",
+        f"**Repository:** `{inp['repository']}`  ",
+        f"**Base:** `{inp['base']['ref']}` @ `{inp['base']['commit']}`  ",
+        f"**Test command:** `{inp['test_command']}`  ",
+        f"**Sandbox:** {report['isolation']['backend']} (network isolated: {report['isolation']['network_isolated']})",
+        "",
+    ]
     if report["isolation"].get("warning"):
         out += [f"> **Warning:** {report['isolation']['warning']}", ""]
     out += ["## Branches", "", "| Label | Ref | Commit | Changed files |", "|---|---|---|---|"]
     for b in inp["branches"]:
-        out.append(f"| {b['label']} | `{b['ref']}` | `{b['commit'][:12]}` | "
-                   f"{', '.join(b['changed_files']) or '-'} |")
+        out.append(f"| {b['label']} | `{b['ref']}` | `{b['commit'][:12]}` | {', '.join(b['changed_files']) or '-'} |")
     out += ["", "## Findings", ""]
     if not report["findings"]:
         out += ["No failing combinations were found within the explored space.", ""]
     for f in report["findings"]:
-        out += [f"### {f['id']}: {f['kind']} — {' + '.join(f['branches'])}", "",
-                f"- Fingerprint: `{f['fingerprint']}`",
-                f"- Minimality: **{f['minimality']}**" +
-                (f" ({'; '.join(f['minimality_caveats'])})" if f["minimality_caveats"] else ""),
-                f"- Stability: {f['stability']}",
-                f"- Reduced from: `{f['reduced_from']}`",
-                f"- Evidence: {', '.join('`' + e + '`' for e in f['evidence'])}", ""]
+        out += [
+            f"### {f['id']}: {f['kind']} — {' + '.join(f['branches'])}",
+            "",
+            f"- Fingerprint: `{f['fingerprint']}`",
+            f"- Minimality: **{f['minimality']}**"
+            + (f" ({'; '.join(f['minimality_caveats'])})" if f["minimality_caveats"] else ""),
+            f"- Stability: {f['stability']}",
+            f"- Reduced from: `{f['reduced_from']}`",
+            f"- Evidence: {', '.join('`' + e + '`' for e in f['evidence'])}",
+            "",
+        ]
         if f["signature"]:
             out += ["Failure signature (normalized):", "", "```", *f["signature"], "```", ""]
         out += ["Removal checks:", "", "| Removed | Combination | Status | Verdict |", "|---|---|---|---|"]
@@ -164,36 +191,59 @@ def to_markdown(report: Dict) -> str:
     out += ["## Textual merge conflicts", ""]
     if report["conflicts"]:
         for c in report["conflicts"]:
-            out.append(f"- `{c['combination']}`: conflict while merging `{c['conflict_while_merging']}` "
-                       f"in {', '.join('`' + x + '`' for x in c['files'])}")
+            out.append(
+                f"- `{c['combination']}`: conflict while merging `{c['conflict_while_merging']}` "
+                f"in {', '.join('`' + x + '`' for x in c['files'])}"
+            )
     else:
         out.append("None.")
-    out += ["", "## All combinations", "", "| Combination | Status | Runs | Fingerprints | Tree |",
-            "|---|---|---|---|---|"]
+    out += [
+        "",
+        "## All combinations",
+        "",
+        "| Combination | Status | Runs | Fingerprints | Tree |",
+        "|---|---|---|---|---|",
+    ]
     for c in report["combinations"]:
-        out.append(f"| `{c['id']}` | {c['status']}{' (incomplete)' if c['incomplete'] else ''} | "
-                   f"{len(c['runs'])} | {', '.join(c['fingerprints']) or '-'} | "
-                   f"`{(c['tree'] or '-')[:12]}` |")
+        out.append(
+            f"| `{c['id']}` | {c['status']}{' (incomplete)' if c['incomplete'] else ''} | "
+            f"{len(c['runs'])} | {', '.join(c['fingerprints']) or '-'} | "
+            f"`{(c['tree'] or '-')[:12]}` |"
+        )
     b = report["budget"]
-    out += ["", "## Budget", "",
-            f"Used {b['used_runs']} / {b['max_runs']} test runs; max size {b['max_size']}; "
-            f"exhausted: {b['exhausted']}{' (' + b['reason'] + ')' if b['reason'] else ''}.", ""]
+    out += [
+        "",
+        "## Budget",
+        "",
+        f"Used {b['used_runs']} / {b['max_runs']} test runs; max size {b['max_size']}; "
+        f"exhausted: {b['exhausted']}{' (' + b['reason'] + ')' if b['reason'] else ''}.",
+        "",
+    ]
     if b["unexplored"]:
-        out.append(f"Unexplored combinations ({len(b['unexplored'])}): " +
-                   ", ".join(f"`{u}`" for u in b["unexplored"][:50]))
+        out.append(
+            f"Unexplored combinations ({len(b['unexplored'])}): " + ", ".join(f"`{u}`" for u in b["unexplored"][:50])
+        )
     if report["pruned"]:
-        out += ["", f"Pruned combinations ({len(report['pruned'])}): supersets of failing, flaky or "
-                    "conflicting sets are not run."]
+        out += [
+            "",
+            f"Pruned combinations ({len(report['pruned'])}): supersets of failing, flaky or "
+            "conflicting sets are not run.",
+        ]
     out += ["", "## Canonical order", "", report["canonical_order"]["description"], ""]
     if report.get("explanation"):
         out += [explanation_markdown(report["explanation"])]
     return "\n".join(out) + "\n"
 
 
-def explanation_markdown(exp: Dict) -> str:
-    out = ["## Explanation (generated, evidence-cited)", "",
-           f"_Model: {exp.get('model')}. Claims marked HYPOTHESIS are not established by the "
-           f"recorded evidence._", "", exp.get("summary", ""), ""]
+def explanation_markdown(exp: dict) -> str:
+    out = [
+        "## Explanation (generated, evidence-cited)",
+        "",
+        f"_Model: {exp.get('model')}. Claims marked HYPOTHESIS are not established by the recorded evidence._",
+        "",
+        exp.get("summary", ""),
+        "",
+    ]
     for c in exp.get("claims", []):
         tag = "OBSERVATION" if c["label"] == "observation" else "HYPOTHESIS"
         cites = ", ".join(f"`{e}`" for e in c["evidence"]) or "no valid citation"
@@ -204,12 +254,13 @@ def explanation_markdown(exp: Dict) -> str:
 
 
 # ---------------------------------------------------------------------- html
-def to_html(report: Dict) -> str:
+def to_html(report: dict) -> str:
     from .html_report import render
+
     return render(report)
 
 
-def write(report: Dict, out_dir: Path, formats=("json", "md", "html")) -> List[Path]:
+def write(report: dict, out_dir: Path, formats=("json", "md", "html")) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
     if "json" in formats:

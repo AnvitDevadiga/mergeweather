@@ -11,7 +11,6 @@ from __future__ import annotations
 import html
 import json
 from pathlib import Path
-from typing import Dict, Iterable, List
 
 ASSETS = Path(__file__).with_name("assets")
 
@@ -56,7 +55,7 @@ def weather_key(status: str, size: int) -> str:
     return status if status in WEATHER else "pending"
 
 
-def badge(status: str, size: int = 2, label: str = None) -> str:
+def badge(status: str, size: int = 2, label: str | None = None) -> str:
     icon, name, cls = WEATHER[weather_key(status, size)]
     return (f'<span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs '
             f'font-medium ring-1 ring-inset {cls}">{icon} {e(label or name)}</span>')
@@ -105,14 +104,14 @@ def anchor(cid: str) -> str:
     return "combo-" + "".join(ch if ch.isalnum() else "-" for ch in cid)
 
 
-def related_claims(exp: Dict, finding: Dict) -> List[Dict]:
+def related_claims(exp: dict, finding: dict) -> list[dict]:
     ids = {f"finding:{finding['id']}", f"combo:{finding['combination']}", f"combo:{finding['reduced_from']}"}
     ids |= {f"combo:{c['combination']}" for c in finding["removal_checks"]}
     ids |= {f"diff:{b}" for b in finding["branches"]}
     return [c for c in exp.get("claims", []) if set(c["evidence"]) & ids or not c["evidence"]]
 
 
-def finding_card(f: Dict, report: Dict, combos: Dict[str, Dict]) -> str:
+def finding_card(f: dict, report: dict, combos: dict[str, dict]) -> str:
     icon, name, _ = WEATHER[weather_key("fail", len(f["branches"]))]
     proven = f["minimality"] == "proven_1_minimal"
     chips = " ".join(f'<span class="{CHIP}">{e(b)}</span>' for b in f["branches"])
@@ -202,7 +201,7 @@ def finding_card(f: Dict, report: Dict, combos: Dict[str, Dict]) -> str:
 </article>"""
 
 
-def combo_rows(report: Dict) -> str:
+def combo_rows(report: dict) -> str:
     rows = []
     for c in report["combinations"]:
         size = len(c["branches"])
@@ -234,19 +233,19 @@ def _asset(name: str) -> str:
     return (ASSETS / name).read_text()
 
 
-def _json_for_script(data: Dict) -> str:
+def _json_for_script(data: dict) -> str:
     return (json.dumps(data, separators=(",", ":"))
             .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
 
 
-def render(report: Dict) -> str:
+def render(report: dict) -> str:
     inp, iso, bud = report["inputs"], report["isolation"], report["budget"]
     combos = {c["id"]: c for c in report["combinations"]}
     vicon, vtitle, vdesc, vgrad, vcolor = VERDICT.get(report["verdict"], ("?", report["verdict"], "", "", ""))
     tested = sum(1 for c in report["combinations"] if c["runs"])
     findings = report["findings"]
 
-    status_counts: Dict[str, int] = {}
+    status_counts: dict[str, int] = {}
     for c in report["combinations"]:
         k = weather_key(c["status"], len(c["branches"]))
         status_counts[k] = status_counts.get(k, 0) + 1
@@ -402,7 +401,7 @@ def render(report: Dict) -> str:
 </html>"""
 
 
-def graph_data(report: Dict) -> Dict:
+def graph_data(report: dict) -> dict:
     """Compact data for the graph: everything else is already in the DOM."""
     nodes = []
     for c in report["combinations"]:

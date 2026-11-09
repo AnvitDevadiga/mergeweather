@@ -32,6 +32,10 @@ sandbox.
 |---|---|
 | `make install` | `uv venv` + editable install with `[dev]` extras |
 | `make test` | `pytest -q` (about 30 s) |
+| `make lint` | `ruff check` + `ruff format --check` |
+| `make format` | Auto-fix lint issues and format the code |
+| `make typecheck` | `mypy` (strict-optional, checks untyped defs) |
+| `make check` | lint + typecheck + test: run this before opening a PR |
 | `make demo` | `mergeweather demo` against the bundled fixture |
 | `make css` | Recompile the report's Tailwind CSS (needs Node; see below) |
 | `make build` | Build the sdist and wheel into `dist/` |
@@ -86,6 +90,10 @@ Commit the regenerated `report.css`, so users never need Node. To preview, run
 
 ## Tests
 
+Style is enforced by ruff (config in `pyproject.toml`). `make format` fixes most issues.
+`html_report.py` is excluded from the formatter on purpose: its HTML f-string templates
+must stay valid on Python < 3.12.
+
 Every behavior change needs a test. Useful helpers live in `tests/conftest.py`:
 `make_repo()` builds a throwaway git repo from dicts of files, and the `make_engine`
 fixture runs the engine with the local backend. Existing suites:
@@ -103,11 +111,14 @@ Run one file or test with `pytest tests/test_edge_cases.py -k flaky -q`.
 
 1. Fork the repo and create a branch: `git checkout -b fix/short-description`.
 2. Make your change and add or update tests.
-3. Run `make test` and make sure it passes. If you touched the report, check it in a browser.
+3. Run `make check` (lint, format check, mypy, tests) and make sure it passes. If you touched the report, check it in a browser.
 4. Update `README.md` if you changed user-facing behavior or flags.
 5. Open a PR describing **what** changed and **why**. Screenshots help for UI changes.
 
-CI runs the suite on macOS (Python 3.9, 3.13) and Linux (Python 3.10, 3.13), plus a demo smoke test.
+CI runs three jobs: **lint** (ruff check, ruff format, mypy), **test** (Ubuntu and macOS ×
+Python 3.10–3.13, plus macOS 3.9 as the oldest supported version, each with a demo smoke
+test), and **build** (sdist and wheel, `twine check`, wheel contents, and a demo run from
+the installed wheel in a clean venv).
 Keep PRs focused: several small PRs are easier to review than one large one.
 
 ## Reporting bugs

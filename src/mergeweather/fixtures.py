@@ -11,15 +11,22 @@ latency-budget  A checkout pipeline whose stages are discovered from
 harmless        Same base; three branches add a 20 ms stage, a doc file and a
                 log-message tweak. Every combination passes.
 """
+
 import os
 import subprocess
-import sys
 from pathlib import Path
 
-ENV = {**os.environ, "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "fixture@example.com",
-       "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "fixture@example.com",
-       "GIT_AUTHOR_DATE": "2024-01-01T00:00:00 +0000", "GIT_COMMITTER_DATE": "2024-01-01T00:00:00 +0000",
-       "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+ENV = {
+    **os.environ,
+    "GIT_AUTHOR_NAME": "Fixture",
+    "GIT_AUTHOR_EMAIL": "fixture@example.com",
+    "GIT_COMMITTER_NAME": "Fixture",
+    "GIT_COMMITTER_EMAIL": "fixture@example.com",
+    "GIT_AUTHOR_DATE": "2024-01-01T00:00:00 +0000",
+    "GIT_COMMITTER_DATE": "2024-01-01T00:00:00 +0000",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_NOSYSTEM": "1",
+}
 
 
 def git(repo, *args):
@@ -36,8 +43,7 @@ def write(repo: Path, files):
 BASE_FILES = {
     "checkout/__init__.py": "",
     "checkout/stages/__init__.py": "",
-    "checkout/stages/core.py": '"""Core payment authorization."""\nLATENCY_MS = 100\n'
-                               'LOG = "authorizing payment"\n',
+    "checkout/stages/core.py": '"""Core payment authorization."""\nLATENCY_MS = 100\nLOG = "authorizing payment"\n',
     "checkout/pipeline.py": '''"""Checkout pipeline: every module in checkout/stages runs once per request."""
 import importlib
 import pkgutil
@@ -90,6 +96,7 @@ def build(dest: Path, name: str, branches):
     repo = dest / name
     if repo.exists():
         import shutil
+
         shutil.rmtree(repo)
     repo.mkdir(parents=True)
     git(repo, "init", "-q", "-b", "main")
@@ -107,18 +114,28 @@ def build(dest: Path, name: str, branches):
 
 def build_all(dest: Path):
     dest.mkdir(parents=True, exist_ok=True)
-    three_way = build(dest, "latency-budget", {
-        "feature/fraud-check": (stage("fraud", 60, "Fraud scoring call."), "add fraud check stage"),
-        "feature/tax-service": (stage("tax", 60, "Remote tax computation."), "add tax service stage"),
-        "feature/loyalty": (stage("loyalty", 60, "Loyalty points lookup."), "add loyalty stage"),
-    })
-    harmless = build(dest, "harmless", {
-        "feature/cache-warm": (stage("cache", 20, "Cache warm-up."), "add cache warm stage"),
-        "feature/docs": ({"docs/checkout.md": "# Checkout\nStages run in name order.\n"}, "add docs"),
-        "feature/log-wording": ({"checkout/stages/core.py": '"""Core payment authorization."""\n'
-                                 'LATENCY_MS = 100\nLOG = "authorizing card payment"\n'},
-                                "clarify log message"),
-    })
+    three_way = build(
+        dest,
+        "latency-budget",
+        {
+            "feature/fraud-check": (stage("fraud", 60, "Fraud scoring call."), "add fraud check stage"),
+            "feature/tax-service": (stage("tax", 60, "Remote tax computation."), "add tax service stage"),
+            "feature/loyalty": (stage("loyalty", 60, "Loyalty points lookup."), "add loyalty stage"),
+        },
+    )
+    harmless = build(
+        dest,
+        "harmless",
+        {
+            "feature/cache-warm": (stage("cache", 20, "Cache warm-up."), "add cache warm stage"),
+            "feature/docs": ({"docs/checkout.md": "# Checkout\nStages run in name order.\n"}, "add docs"),
+            "feature/log-wording": (
+                {
+                    "checkout/stages/core.py": '"""Core payment authorization."""\n'
+                    'LATENCY_MS = 100\nLOG = "authorizing card payment"\n'
+                },
+                "clarify log message",
+            ),
+        },
+    )
     return three_way, harmless
-
-

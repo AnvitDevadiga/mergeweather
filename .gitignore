@@ -8,3 +8,4 @@ mergeweather-report/
 demo-output/
 .venv/
 mergeweather-demo/
+.venv*/

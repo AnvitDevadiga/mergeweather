@@ -1,6 +1,7 @@
 import json
 
 from conftest import git
+
 from mergeweather import report
 
 CMD = "python3 integration_test.py"
@@ -43,11 +44,19 @@ def test_user_repo_untouched(fixtures, make_engine):
     repo, _ = fixtures
     git(repo, "checkout", "-q", "feature/tax-service")
     (repo / "scratch.txt").write_text("uncommitted")
-    before = (git(repo, "rev-parse", "HEAD"), git(repo, "status", "--porcelain"),
-              git(repo, "for-each-ref"), git(repo, "stash", "list"))
+    before = (
+        git(repo, "rev-parse", "HEAD"),
+        git(repo, "status", "--porcelain"),
+        git(repo, "for-each-ref"),
+        git(repo, "stash", "list"),
+    )
     make_engine(repo, THREE, CMD).run()
-    after = (git(repo, "rev-parse", "HEAD"), git(repo, "status", "--porcelain"),
-             git(repo, "for-each-ref"), git(repo, "stash", "list"))
+    after = (
+        git(repo, "rev-parse", "HEAD"),
+        git(repo, "status", "--porcelain"),
+        git(repo, "for-each-ref"),
+        git(repo, "stash", "list"),
+    )
     assert before == after
 
 
@@ -65,10 +74,12 @@ def test_deterministic_trees(fixtures, make_engine):
 def test_full_first_reduction(tmp_path, make_engine):
     """Four branches, failure needs exactly a+b+c; full set must reduce to the triple."""
     from conftest import make_repo
-    test = ("import glob,sys\nn=len(glob.glob('flags/*'))\nfl=set(p[6:] for p in glob.glob('flags/*'))\n"
-            "bad={'a','b','c'}<=fl\nprint('FAIL: AssertionError combo' if bad else 'ok')\nsys.exit(1 if bad else 0)\n")
-    repo = make_repo(tmp_path / "r", {"t.py": test, "flags/.keep": ""},
-                     {x: {f"flags/{x}": x} for x in "abcd"})
+
+    test = (
+        "import glob,sys\nn=len(glob.glob('flags/*'))\nfl=set(p[6:] for p in glob.glob('flags/*'))\n"
+        "bad={'a','b','c'}<=fl\nprint('FAIL: AssertionError combo' if bad else 'ok')\nsys.exit(1 if bad else 0)\n"
+    )
+    repo = make_repo(tmp_path / "r", {"t.py": test, "flags/.keep": ""}, {x: {f"flags/{x}": x} for x in "abcd"})
     eng = make_engine(repo, list("abcd"), "python3 t.py", full_first=True, max_size=1)
     eng.run()
     full = [f for f in eng.findings if f["reduced_from"] == "a+b+c+d"]

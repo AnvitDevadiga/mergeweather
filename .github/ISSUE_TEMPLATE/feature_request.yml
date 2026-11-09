@@ -1,0 +1,46 @@
+name: ✨ Feature request
+description: Suggest an idea or improvement for MergeWeather.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what makes it hard today?
+      placeholder: "When I have 8+ release branches, ..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like MergeWeather to do? CLI flags, report changes, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Engine (exploration / reduction / fingerprints)
+        - Git handling
+        - Sandbox
+        - Terminal dashboard
+        - Reports
+        - explain (LLM explanation)
+        - Packaging / CI integration
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd be willing to open a PR for this.

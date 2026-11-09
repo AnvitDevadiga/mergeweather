@@ -9,9 +9,10 @@ Weather scale
   🌪  Tornado       infrastructure error (sandbox could not run)
   ❔  Uncharted     not run (budget exhausted)
 """
+
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Any
 
 from rich import box
 from rich.console import Console, Group
@@ -21,7 +22,7 @@ from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
-WEATHER: Dict[str, tuple] = {
+WEATHER: dict[str, tuple] = {
     "pass": ("☀", "Sunny", "bold yellow"),
     "interaction": ("⛈", "Thunderstorm", "bold red"),
     "fail": ("🌧", "Rain", "red"),
@@ -54,15 +55,15 @@ def weather_text(status: str, size: int) -> Text:
 class Dashboard:
     """Live progress view fed by Engine events."""
 
-    def __init__(self, console: Optional[Console] = None, title: str = "MergeWeather"):
+    def __init__(self, console: Console | None = None, title: str = "MergeWeather"):
         self.console = console or Console(stderr=True)
         self.title = title
         self.phase = "resolving refs"
         self.current = ""
-        self.rows: Dict[str, object] = {}
+        self.rows: dict[str, Any] = {}
         self.runs = 0
         self.max_runs = 0
-        self.live: Optional[Live] = None
+        self.live: Live | None = None
 
     # engine callback
     def __call__(self, kind: str, **data) -> None:
@@ -85,12 +86,17 @@ class Dashboard:
         table.add_column("Runs", justify="right")
         table.add_column("Tree", style="dim")
         for rec in list(self.rows.values())[-14:]:
-            table.add_row(rec.id, weather_text(rec.status, len(rec.branches)), str(len(rec.runs)),
-                          (rec.tree or "-")[:10])
-        status = Spinner("dots", text=Text.assemble(
-            ("  " + self.phase, "bold cyan"),
-            (f"  ·  testing {self.current}" if self.current else "", "white"),
-            (f"  ·  {self.runs}/{self.max_runs} runs" if self.max_runs else f"  ·  {self.runs} runs", "dim")))
+            table.add_row(
+                rec.id, weather_text(rec.status, len(rec.branches)), str(len(rec.runs)), (rec.tree or "-")[:10]
+            )
+        status = Spinner(
+            "dots",
+            text=Text.assemble(
+                ("  " + self.phase, "bold cyan"),
+                (f"  ·  testing {self.current}" if self.current else "", "white"),
+                (f"  ·  {self.runs}/{self.max_runs} runs" if self.max_runs else f"  ·  {self.runs} runs", "dim"),
+            ),
+        )
         return Panel(Group(status, table), title=f"[bold]🌤  {self.title}[/]", border_style="cyan")
 
     def __enter__(self):
@@ -106,7 +112,7 @@ class Dashboard:
 
 def print_summary(report: dict, console: Console, paths=()) -> None:
     icon, label, style = VERDICT_WEATHER.get(report["verdict"], ("?", report["verdict"], "bold"))
-    labels = [b["label"] for b in report["inputs"]["branches"]]
+    [b["label"] for b in report["inputs"]["branches"]]
 
     branches = Table(title="Branch conditions", box=box.ROUNDED, title_style="bold")
     branches.add_column("Branch", style="bold")
@@ -118,9 +124,12 @@ def print_summary(report: dict, console: Console, paths=()) -> None:
         alone = by_id.get(b["label"])
         involved = [f["id"] for f in report["findings"] if b["label"] in f["branches"]]
         involved += [f"conflict:{c['combination']}" for c in report["conflicts"] if b["label"] in c["branches"]]
-        branches.add_row(b["label"], b["commit"][:10],
-                         weather_text(alone["status"], 1) if alone else Text("❔ Uncharted", style="dim"),
-                         ", ".join(involved) or Text("—", style="dim"))
+        branches.add_row(
+            b["label"],
+            b["commit"][:10],
+            weather_text(alone["status"], 1) if alone else Text("❔ Uncharted", style="dim"),
+            ", ".join(involved) or Text("—", style="dim"),
+        )
 
     forecast = Table(title="Forecast by combination", box=box.ROUNDED, title_style="bold")
     forecast.add_column("Combination", style="bold")
@@ -136,8 +145,13 @@ def print_summary(report: dict, console: Console, paths=()) -> None:
         forecast.add_row(c["id"], weather_text(c["status"], len(c["branches"])), str(len(c["runs"])), detail)
 
     console.print()
-    console.print(Panel(Text(f"{icon}  {label}", style=style, justify="center"),
-                        title="[bold]MergeWeather forecast[/]", border_style=style.split()[-1]))
+    console.print(
+        Panel(
+            Text(f"{icon}  {label}", style=style, justify="center"),
+            title="[bold]MergeWeather forecast[/]",
+            border_style=style.split()[-1],
+        )
+    )
     console.print(branches)
     console.print(forecast)
     for f in report["findings"]:
@@ -152,10 +166,14 @@ def print_summary(report: dict, console: Console, paths=()) -> None:
             body.append(f"  {line}\n", style="dim")
         console.print(Panel(body, title=f"[{wstyle}]{wicon} {f['id']} {wname}[/]", border_style=wstyle.split()[-1]))
     b = report["budget"]
-    console.print(Text(f"Budget: {b['used_runs']}/{b['max_runs']} runs"
-                       + (f" · exhausted ({b['reason']})" if b["exhausted"] else "")
-                       + f" · sandbox: {report['isolation']['backend']}"
-                       + ("" if report["isolation"]["network_isolated"] else " (no network isolation)"),
-                       style="dim"))
+    console.print(
+        Text(
+            f"Budget: {b['used_runs']}/{b['max_runs']} runs"
+            + (f" · exhausted ({b['reason']})" if b["exhausted"] else "")
+            + f" · sandbox: {report['isolation']['backend']}"
+            + ("" if report["isolation"]["network_isolated"] else " (no network isolation)"),
+            style="dim",
+        )
+    )
     for p in paths:
         console.print(Text(f"report → {p}", style="cyan"))
