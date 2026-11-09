@@ -158,6 +158,27 @@ network access. Every report states which guarantees actually held.
 - conflicts, pruned and unexplored combinations, and budget usage
 - an interaction graph: SVG in the HTML report, Mermaid in the Markdown report
 
+`report.html` is a single self-contained dashboard (about 110 KB). It makes no network
+requests, so you can attach it to a CI run or email it:
+
+- dark mode by default, with a light-mode toggle; styled with Tailwind compiled at
+  build time and inlined
+- an interactive graph with two views. The **combination lattice** has a column per
+  combination size and edges to the sets one branch larger; it highlights the
+  reduction path and 1-minimality proof for a finding. The **branch network** draws
+  interactions as hubs and conflicts as dashed edges. Hover for details, click to
+  inspect, scroll to zoom, drag to pan.
+- a collapsible **Evidence & LLM Explanation** drawer for each finding: the failure
+  signature, the removal-check table, the reduction path, raw test output, and any
+  attached explanation with OBSERVATION/HYPOTHESIS labels and evidence citations
+- a one-click **Copy reproduction command** button, with a fallback for `file://`
+  pages where the clipboard API is blocked
+- a filterable, searchable table of every combination
+
+All data is also rendered as plain HTML, so the report stays readable with JavaScript
+off. To change the styling, edit the classes in `src/mergeweather/html_report.py` and
+run `make css` (needs Node); the compiled CSS is committed, so users never need Node.
+
 ## Optional explanation step
 
 ```sh

@@ -1,9 +1,7 @@
 """Report model and exporters (JSON, Markdown, static HTML)."""
 from __future__ import annotations
 
-import html
 import json
-import math
 import shlex
 from dataclasses import asdict
 from pathlib import Path
@@ -206,161 +204,9 @@ def explanation_markdown(exp: Dict) -> str:
 
 
 # ---------------------------------------------------------------------- html
-def _svg_graph(report: Dict) -> str:
-    labels = [b["label"] for b in report["inputs"]["branches"]]
-    n = len(labels)
-    W, H, R = 520, 380, 140
-    cx, cy = W / 2, H / 2
-    pos = {}
-    for i, l in enumerate(labels):
-        a = -math.pi / 2 + 2 * math.pi * i / max(n, 1)
-        pos[l] = (cx + R * math.cos(a), cy + R * math.sin(a))
-    parts = [f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="Branch interaction graph" '
-             f'class="graph">']
-    for c in report["conflicts"]:
-        if len(c["branches"]) == 2:
-            (x1, y1), (x2, y2) = pos[c["branches"][0]], pos[c["branches"][1]]
-            parts.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
-                         f'class="e-conflict"><title>textual conflict</title></line>')
-    for f in report["findings"]:
-        members = f["branches"]
-        cls = "e-fail" if f["stability"] == "stable" else "e-flaky"
-        tip = html.escape(f"{f['id']}: {f['kind']} ({f['minimality']})")
-        if len(members) == 2:
-            (x1, y1), (x2, y2) = pos[members[0]], pos[members[1]]
-            parts.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
-                         f'class="{cls}"><title>{tip}</title></line>')
-        elif len(members) >= 3:
-            hx = sum(pos[m][0] for m in members) / len(members)
-            hy = sum(pos[m][1] for m in members) / len(members)
-            for m in members:
-                parts.append(f'<line x1="{pos[m][0]:.1f}" y1="{pos[m][1]:.1f}" x2="{hx:.1f}" '
-                             f'y2="{hy:.1f}" class="{cls}"><title>{tip}</title></line>')
-            parts.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="16" class="hub"><title>{tip}</title>'
-                         f'</circle><text x="{hx:.1f}" y="{hy + 4:.1f}" class="hubt">'
-                         f'{html.escape(f["id"])}</text>')
-    failing_alone = {f["branches"][0] for f in report["findings"] if len(f["branches"]) == 1}
-    for l, (x, y) in pos.items():
-        cls = "node bad" if l in failing_alone else "node"
-        parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="9" class="{cls}"></circle>'
-                     f'<text x="{x:.1f}" y="{y - 16:.1f}" class="nlabel">{html.escape(l)}</text>')
-    parts.append("</svg>")
-    return "".join(parts)
-
-
-CSS = """
-:root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#6b6a65;--card:#fff;--line:#e4e1d8;--bad:#c2410c;
---ok:#15803d;--warn:#b45309;--accent:#1e40af;--code:#f3f1ea}
-@media (prefers-color-scheme:dark){:root{--bg:#141413;--fg:#ecebe6;--muted:#a3a29b;--card:#1f1f1d;
---line:#34332f;--bad:#f97316;--ok:#4ade80;--warn:#fbbf24;--accent:#93c5fd;--code:#262623}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
-font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:1000px;margin:0 auto;padding:24px 16px 64px}
-h1{font-size:26px;margin:0 0 4px}h2{font-size:19px;margin:36px 0 10px;border-bottom:1px solid var(--line);
-padding-bottom:6px}h3{font-size:16px;margin:0 0 8px}
-.muted{color:var(--muted)}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
-padding:16px;margin:12px 0}
-code,pre{font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);border-radius:6px}
-code{padding:1px 5px}pre{padding:10px 12px;overflow-x:auto;white-space:pre}
-table{border-collapse:collapse;width:100%;font-size:14px;display:block;overflow-x:auto}
-th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;
-border:1px solid currentColor}
-.s-pass{color:var(--ok)}.s-fail{color:var(--bad)}.s-flaky,.s-conflict,.s-not_run,.s-error{color:var(--warn)}
-.warn{border-left:4px solid var(--warn)}
-.graph{width:100%;max-width:560px;height:auto;display:block;margin:auto}
-.node{fill:var(--accent)}.node.bad{fill:var(--bad)}.nlabel{fill:var(--fg);font-size:13px;text-anchor:middle}
-.e-fail{stroke:var(--bad);stroke-width:3}.e-flaky{stroke:var(--warn);stroke-width:3;stroke-dasharray:2 4}
-.e-conflict{stroke:var(--warn);stroke-width:2;stroke-dasharray:6 5}
-.hub{fill:var(--card);stroke:var(--bad);stroke-width:2}.hubt{fill:var(--fg);font-size:11px;text-anchor:middle;font-weight:700}
-details summary{cursor:pointer;color:var(--accent)}
-"""
-
-
-def _pill(status: str) -> str:
-    return f'<span class="pill s-{html.escape(status)}">{html.escape(status)}</span>'
-
-
 def to_html(report: Dict) -> str:
-    e = html.escape
-    inp = report["inputs"]
-    iso = report["isolation"]
-    h = [f"<!doctype html><html lang='en'><head><meta charset='utf-8'>"
-         f"<meta name='viewport' content='width=device-width,initial-scale=1'>"
-         f"<title>MergeWeather Report</title><style>{CSS}</style></head><body><main>",
-         f"<h1>MergeWeather report</h1><p class='muted'>Verdict {_pill(report['verdict'])} · "
-         f"base <code>{e(inp['base']['ref'])}</code> @ <code>{e(inp['base']['commit'][:12])}</code> · "
-         f"command <code>{e(inp['test_command'])}</code></p>"]
-    h.append(f"<div class='card{' warn' if iso.get('warning') else ''}'><b>Sandbox:</b> "
-             f"{e(str(iso['backend']))} · network isolated: {e(str(iso['network_isolated']))} · "
-             f"memory limit: {e(str(iso.get('memory_limit_mb')))} MB · timeout: "
-             f"{e(str(iso['timeout_s']))} s · credentials scrubbed: {e(str(iso['credentials_scrubbed']))}"
-             + (f"<br><b>Warning:</b> {e(iso['warning'])}" if iso.get("warning") else "") + "</div>")
-    h.append("<h2>Interaction graph</h2><div class='card'>" + _svg_graph(report) +
-             "<p class='muted'>Solid red: stable failing interaction (hub = 3+ branches). "
-             "Dotted amber: unstable. Dashed amber: textual conflict.</p></div>")
-    h.append("<h2>Findings</h2>")
-    if not report["findings"]:
-        h.append("<div class='card'>No failing combinations were found within the explored space.</div>")
-    for f in report["findings"]:
-        rows = "".join(f"<tr><td>{e(c['removed'])}</td><td><code>{e(c['combination'])}</code></td>"
-                       f"<td>{_pill(c['status'])}</td><td>{e(c['verdict'])}</td></tr>"
-                       for c in f["removal_checks"])
-        h.append(
-            f"<div class='card'><h3>{e(f['id'])}: {e(f['kind'])} — {e(' + '.join(f['branches']))}</h3>"
-            f"<p>Fingerprint <code>{e(f['fingerprint'] or '')}</code> · minimality "
-            f"<b>{e(f['minimality'])}</b> · stability {e(f['stability'])} · reduced from "
-            f"<code>{e(f['reduced_from'])}</code></p>"
-            + (f"<p class='muted'>Caveats: {e('; '.join(f['minimality_caveats']))}</p>"
-               if f["minimality_caveats"] else "")
-            + (f"<pre>{e(chr(10).join(f['signature']))}</pre>" if f["signature"] else "")
-            + f"<table><tr><th>Removed</th><th>Combination</th><th>Status</th><th>Verdict</th></tr>{rows}</table>"
-            f"<details><summary>Reproduction commands</summary><pre>{e(f['reproduction'])}</pre></details>"
-            "</div>")
-    h.append(f"<p class='muted'>{e(report['minimality_note'])}</p>")
-    if report.get("explanation"):
-        exp = report["explanation"]
-        items = "".join(
-            f"<li><span class='pill {'s-pass' if c['label'] == 'observation' else 's-flaky'}'>"
-            f"{'OBSERVATION' if c['label'] == 'observation' else 'HYPOTHESIS'}</span> {e(c['text'])} "
-            f"<span class='muted'>[{e(', '.join(c['evidence']) or 'no valid citation')}]</span></li>"
-            for c in exp.get("claims", []))
-        h.append(f"<h2>Explanation</h2><div class='card'><p class='muted'>Generated by "
-                 f"{e(str(exp.get('model')))}; hypotheses are not established by evidence.</p>"
-                 f"<p>{e(exp.get('summary', ''))}</p><ul>{items}</ul></div>")
-    h.append("<h2>Textual merge conflicts</h2><div class='card'>")
-    if report["conflicts"]:
-        h.append("<ul>" + "".join(
-            f"<li><code>{e(c['combination'])}</code>: while merging <code>{e(c['conflict_while_merging'])}"
-            f"</code> — {e(', '.join(c['files']))}</li>" for c in report["conflicts"]) + "</ul>")
-    else:
-        h.append("None.")
-    h.append("</div><h2>Branches</h2><table><tr><th>Label</th><th>Ref</th><th>Commit</th>"
-             "<th>Changed files</th></tr>")
-    for b in inp["branches"]:
-        h.append(f"<tr><td>{e(b['label'])}</td><td><code>{e(b['ref'])}</code></td>"
-                 f"<td><code>{e(b['commit'][:12])}</code></td><td>{e(', '.join(b['changed_files']))}</td></tr>")
-    h.append("</table><h2>All combinations</h2><table><tr><th>Combination</th><th>Status</th>"
-             "<th>Runs</th><th>Tree</th><th>Evidence</th></tr>")
-    for c in report["combinations"]:
-        runs = "".join(
-            f"<p><b>{e(r['id'])}</b> {e(r['outcome'])} exit={e(str(r['exit_code']))} "
-            f"{e(str(r['duration']))}s <code>{e(r['fingerprint'])}</code></p>"
-            f"<pre>{e(r['stdout_tail'][-1500:])}\n{e(r['stderr_tail'][-1500:])}</pre>" for r in c["runs"])
-        extra = (f"<p>Conflict files: {e(', '.join(c['conflict_files']))}</p>" if c["conflict_files"] else
-                 f"<pre>{e(c.get('reproduction', ''))}</pre>")
-        h.append(f"<tr><td><code>{e(c['id'])}</code></td><td>{_pill(c['status'])}"
-                 f"{' <span class=muted>incomplete</span>' if c['incomplete'] else ''}</td>"
-                 f"<td>{len(c['runs'])}</td><td><code>{e((c['tree'] or '-')[:12])}</code></td>"
-                 f"<td><details><summary>details</summary>{extra}{runs}</details></td></tr>")
-    b = report["budget"]
-    h.append(f"</table><h2>Budget</h2><div class='card'>Used {b['used_runs']} / {b['max_runs']} runs, "
-             f"max size {b['max_size']}, exhausted: {e(str(b['exhausted']))}"
-             f"{' — ' + e(b['reason']) if b['reason'] else ''}. Unexplored: {len(b['unexplored'])}. "
-             f"Pruned: {len(report['pruned'])}.</div>")
-    h.append(f"<h2>Canonical order</h2><p>{e(report['canonical_order']['description'])}</p>")
-    h.append("</main></body></html>")
-    return "\n".join(h)
+    from .html_report import render
+    return render(report)
 
 
 def write(report: Dict, out_dir: Path, formats=("json", "md", "html")) -> List[Path]:

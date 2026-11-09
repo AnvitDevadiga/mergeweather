@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --g-pass: #16a34a; --g-fail: #dc2626; --g-inter: #e11d48; --g-flaky: #c026d3;
+  --g-conflict: #a16207; --g-error: #9333ea; --g-notrun: #a1a1aa; --g-pruned: #d4d4d8;
+  --g-edge: #d4d4d8; --g-edge-hot: #e11d48; --g-text: #18181b; --g-bg: #ffffff; --g-ring: #0ea5e9;
+}
+.dark {
+  --g-pass: #4ade80; --g-fail: #f87171; --g-inter: #fb7185; --g-flaky: #e879f9;
+  --g-conflict: #fbbf24; --g-error: #c084fc; --g-notrun: #52525b; --g-pruned: #3f3f46;
+  --g-edge: #3f3f46; --g-edge-hot: #fb7185; --g-text: #e4e4e7; --g-bg: #09090b; --g-ring: #38bdf8;
+}
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details[open] .mw-chevron { transform: rotate(90deg); }
+.mw-graph { touch-action: none; cursor: grab; }
+.mw-graph:active { cursor: grabbing; }
+.mw-graph .node { cursor: pointer; transition: opacity .15s; }
+.mw-graph .edge { transition: opacity .15s, stroke .15s; }
+.mw-graph .dim { opacity: .15; }
+.mw-bg-grid {
+  background-image: radial-gradient(circle at 1px 1px, rgba(127,127,127,.18) 1px, transparent 0);
+  background-size: 18px 18px;
+}
