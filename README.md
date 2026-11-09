@@ -1,227 +1,247 @@
-# MergeWeather
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="MergeWeather: behavioral weather forecasting for Git" width="100%">
+</p>
 
-**Find behavioral integration failures between Git branches that each pass on their own.**
+<p align="center">
+  <a href="https://github.com/AnvitDevadiga/merge-weather/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AnvitDevadiga/merge-weather/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-0ea5e9"></a>
+  <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-8b5cf6">
+  <img alt="Runtime deps: rich only" src="https://img.shields.io/badge/runtime%20deps-rich%20only-16a34a">
+  <img alt="Sandbox: Docker, no network" src="https://img.shields.io/badge/sandbox-docker%2C%20no%20network-f43f5e">
+</p>
 
-Branch A is green. Branch B is green. Branch C is green. Merging all three breaks
-production. Textual merge tools can't see this kind of failure, because the code merges
-cleanly and the bug only shows up when the branches run together. MergeWeather builds
-the combinations deterministically, runs your integration test against each one in an
-isolated container, and reduces every failure to a small set of branches that still
-reproduces it. Each finding comes with evidence and the commands to reproduce it.
+<p align="center"><b>Every branch is green. Every pair is green. The release is on fire.</b><br>
+MergeWeather finds the exact set of Git branches that breaks <i>only when they ship together</i>,<br>
+and gives you the commands to reproduce it.</p>
 
-## Try it in 10 seconds
+---
+
+## ⚡ Try it in one command
 
 ```sh
 uvx --from git+https://github.com/AnvitDevadiga/merge-weather mergeweather demo
 ```
 
-`mergeweather demo` builds a throwaway Git repo with a hidden 3-way bug, runs the
-engine with a live dashboard, prints the forecast, and opens the HTML report in your
-browser:
+That's it. The demo builds a throwaway Git repo with a hidden **3-way interaction bug**,
+tests every combination of branches with a live terminal dashboard, narrows the failure
+down to the guilty branches, and opens an interactive HTML report in your browser.
+Your files are never touched.
 
-```
+> No `uv`? `pipx run --spec git+https://github.com/AnvitDevadiga/merge-weather mergeweather demo`
+> works too. Requires Python ≥ 3.9 and `git`.
+
+```text
 ╭──────────────────────────── MergeWeather forecast ────────────────────────────╮
 │                               ⛈  Storm warning                                │
 ╰───────────────────────────────────────────────────────────────────────────────╯
-            Forecast by combination
 ╭───────────────────┬────────────────┬──────╮
 │ Combination       │ Weather        │ Runs │
 ├───────────────────┼────────────────┼──────┤
 │ base              │ ☀ Sunny        │    3 │
 │ fraud             │ ☀ Sunny        │    1 │
-│ fraud+loyalty     │ ☀ Sunny        │    1 │
+│ loyalty           │ ☀ Sunny        │    1 │
+│ tax               │ ☀ Sunny        │    1 │
+│ fraud+loyalty     │ ☀ Sunny        │    3 │
+│ fraud+tax         │ ☀ Sunny        │    3 │
+│ loyalty+tax       │ ☀ Sunny        │    3 │
 │ fraud+loyalty+tax │ ⛈ Thunderstorm │    3 │
 ╰───────────────────┴────────────────┴──────╯
 ╭─ ⛈ F1 Thunderstorm ──────────────────────────────────────────────────╮
 │ fraud + loyalty + tax                                                │
 │ 3-way interaction · proven_1_minimal · stable · fail:1f068da68f61    │
+│   FAIL: AssertionError: checkout latency #ms exceeds SLA #ms         │
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
 
-Options: `--harmless` (the all-clear fixture), `--no-open`, `--out DIR`, `--plain`.
+## 🌩 The problem: N-way integration hell
 
-### The weather scale
+Merge conflicts are the *easy* failures, because Git tells you about them. The expensive
+ones merge cleanly, pass CI on every branch, and only break when a particular **set** of
+changes lands together:
+
+- three features each add "just 60 ms" to a request path with a 250 ms budget
+- two config defaults that are each safe, but not together
+- a retry policy, a timeout change and a new middleware that make a cascade only in combination
+
+CI tests each branch against `main`. Your release tests them **all at once**. The gap
+between those two is where MergeWeather works:
+
+```text
+                 tested by MergeWeather, in canonical order, inside a sandbox
+  size 0        size 1              size 2                       size 3
+  ──────        ──────              ──────                       ──────
+                fraud    ☀ ───┬──── fraud+loyalty  ☀ ───╮
+  base  ☀ ──┼── loyalty  ☀ ───┼──── fraud+tax      ☀ ───┼──── fraud+loyalty+tax  ⛈
+                tax      ☀ ───┴──── loyalty+tax    ☀ ───╯            │
+                                                                     ▼
+              every single branch passes · every pair passes · the triple fails
+                                                                     │
+           reduce: drop one branch at a time, keep the failure fingerprint
+                                                                     │
+           fraud ✗ → loyalty+tax ☀    loyalty ✗ → fraud+tax ☀    tax ✗ → fraud+loyalty ☀
+                                                                     │
+                     ⛈ F1: {fraud, loyalty, tax} — proven 1-minimal, stable
+```
+
+A pairwise matrix would never find this one: it takes all three branches together to
+break the test.
+
+## ☁️ The Weather Scale
 
 | Forecast | Meaning |
 |---|---|
-| ☀ Sunny | combination passes |
-| ⛈ Thunderstorm | branches pass alone but fail together (behavioral interaction) |
-| 🌧 Rain | a single branch fails on its own |
-| 🌦 Showers | flaky: the same tree gave mixed outcomes |
-| 🌫 Fog | textual merge conflict, so not tested |
-| 🌪 Tornado | infrastructure error (the sandbox could not run) |
-| ❔ Uncharted | not run because the budget ran out |
+| ☀ **Sunny** | The combination passes. |
+| ⛈ **Thunderstorm** | Branches pass alone but **fail together**. This is a behavioral interaction, the thing you came for. |
+| 🌧 **Rain** | A single branch fails on its own (not an interaction, just a broken branch). |
+| 🌦 **Showers** | Flaky: the *same tree* gave mixed results across repeats. |
+| 🌫 **Fog** | Textual merge conflict. It's reported separately and never counted as a behavioral failure. |
+| 🌪 **Tornado** | Infrastructure error: the sandbox couldn't run the command. |
+| ❔ **Uncharted** | Not run because the budget ran out. Listed so you know exactly what wasn't covered. |
 
-## Install
+The overall verdict is one of **⛈ Storm warning**, **☀ Clear skies**, **🌥 Partly cloudy**
+(budget ran out) or **🌪 Base is broken**.
+
+## 📊 The interactive report
+
+Every run writes `report.json`, `report.md` and a single self-contained **`report.html`**
+(about 110 KB, no network requests, works offline and as a CI artifact).
+
+<p align="center"><img src="docs/assets/dashboard.png" alt="MergeWeather HTML dashboard: storm warning, KPI cards and the combination lattice highlighting the failing triple" width="100%"></p>
+
+- **Combination lattice:** every tested set, with a column per size. Click a finding to
+  light up how it was reduced and the checks that prove it's minimal. Hover for
+  details, click to inspect, scroll to zoom, drag to pan.
+- **Branch network:** interactions shown as hubs, conflicts as dashed edges.
+- **Evidence & LLM Explanation drawer** for every finding: the failure signature, the
+  removal-check table, the reduction path, raw test output, and (optionally) an
+  explanation where every claim cites evidence.
+- **Copy reproduction command:** one click gives you the exact `git merge` sequence and
+  test command.
+- Filterable table of every combination, and a light/dark toggle (dark by default).
+
+<p align="center"><img src="docs/assets/evidence-drawer.png" alt="A finding card with the reproduction command and the open Evidence and LLM Explanation drawer" width="100%"></p>
+
+## 🚀 Use it on your repo
 
 ```sh
-pipx install git+https://github.com/AnvitDevadiga/merge-weather   # or: uv tool install ...
-# from a clone:
-pip install -e '.[dev]'      # Python ≥ 3.9; only runtime dependency is rich
-make install && make test    # uses uv; creates .venv
-```
+pipx install git+https://github.com/AnvitDevadiga/merge-weather   # or: uv tool install git+…
 
-Once the package is published to PyPI, `uvx mergeweather demo` will work with no URL.
-You need `git`. Docker is the default sandbox for `run`. `demo` uses Docker when it is
-available, and otherwise falls back to the local backend because the fixture is
-bundled, trusted code.
-
-## Usage
-
-```sh
 mergeweather run \
-  --repo path/to/repo \
-  --base 3f2a9c1 \                       # explicit common base
-  -b fraud=feature/fraud-check \         # [LABEL=]REF, repeatable
+  --repo . \
+  --base main \
+  -b fraud=feature/fraud-check \
   -b tax=feature/tax-service \
   -b loyalty=feature/loyalty \
-  --test-cmd "python -m pytest tests/integration" \
-  --max-runs 60 --max-size 4 --repeats 3 \
-  --image python:3.12-slim --timeout 120 --memory 1024 \
-  --out report/
+  --test-cmd "python -m pytest tests/integration -q" \
+  --image python:3.12-slim
 ```
+
+`--base` must be the true common base (every branch must descend from it). Branches take
+an optional `label=` prefix. Each run tests one image and one command; put setup in the
+command (`pip install -e . && pytest ...`) or bake it into the image. The container has
+no network.
+
+<details>
+<summary><b>All options</b></summary>
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--max-runs` | 60 | Budget: total test executions |
+| `--max-seconds` | — | Budget: wall-clock limit |
+| `--max-size` | 4 | Largest combination size to explore |
+| `--repeats` | 3 | Repetitions for any non-passing result (flakiness detection) |
+| `--full-first` | off | Test the full branch set right after the base, then reduce |
+| `--fingerprint-regex` | built-in | Which output lines identify "the same failure" |
+| `--sandbox` | `docker` | `docker`, `local` (needs `--allow-unsandboxed`) or `auto` |
+| `--image` | `python:3.12-slim` | Container image |
+| `--timeout` / `--memory` / `--cpus` | 120 s / 1024 MB / 1 | Per-run limits |
+| `--pass-env` | none | Environment variable to pass through (repeatable) |
+| `--out` / `--formats` | `mergeweather-report` / `json,md,html` | Output |
+| `--plain` / `-q` | | Log lines instead of the dashboard / verdict only |
 
 | Exit code | Meaning |
 |---|---|
-| 0 | no failing combinations found (explored space fully covered) |
+| 0 | no failing combinations (explored space fully covered) |
 | 1 | interactions found |
 | 2 | usage error, invalid ref, base not an ancestor, sandbox unavailable |
-| 3 | the base itself fails, so failures are not attributed to branches |
-| 4 | inconclusive: the budget ran out before the space was covered |
-| 130 | interrupted (workspaces and child processes are cleaned up) |
+| 3 | the base itself fails |
+| 4 | inconclusive: the budget ran out |
+| 130 | interrupted (workspaces and processes cleaned up) |
 
-Other commands:
+Other commands: `mergeweather demo [--harmless]`, `mergeweather explain report.json`,
+`mergeweather render report.json`, `mergeweather clean`.
+</details>
 
-- `mergeweather render report/report.json`: regenerate the Markdown and HTML reports from the JSON.
-- `mergeweather explain report/report.json [--dry-run]`: optional LLM explanation (see below).
-- `mergeweather clean`: remove workspaces left behind by a run killed with `SIGKILL`.
+## 🔬 How it works
 
-## How it works
+1. **Pin.** The base and every branch are resolved to full commit IDs before anything runs.
+2. **Copy, don't touch.** Commits are fetched into a disposable repository under a temp
+   directory. Your refs, index, working tree and stash are never modified. Each
+   combination's tree is exported with `git archive` into a plain directory with no
+   `.git` and no credentials.
+3. **Canonical merges.** A combination is a *set*. It is always built from the base by
+   running `git merge --no-ff` on each member in ascending label order, with a fixed
+   identity and timestamp, so the same set gives the same merge commits and tree IDs
+   every time. Both are recorded.
+4. **Explore within budget.** The order is base (must pass stably), then singles, pairs,
+   and larger sets. Supersets of sets that already failed, were flaky or conflicted are
+   pruned. Identical trees share their evidence.
+5. **Fingerprint.** A failure's identity is its outcome plus normalized signature lines,
+   with numbers, addresses and temp paths stripped. Timeouts get their own fingerprint.
+6. **Repeat.** Every non-passing result is rerun. Mixed outcomes become 🌦 Showers, and
+   findings built on them are labeled `unstable`.
+7. **Reduce.** Branches are dropped one at a time while the *same fingerprint* still
+   reproduces.
 
-1. **Pinning.** The base and every branch are resolved to full commit IDs up front, and
-   only those IDs are used afterwards. Every branch must descend from the base.
-2. **Disposable copies.** Commits are fetched into a fresh repository under a temp
-   directory. Your repo is only read: refs, index, working tree and stash are never
-   touched. Each combination's tree is exported with `git archive` into a plain
-   directory with no `.git` and no credentials, and that directory is what gets tested.
-3. **Canonical order.** A combination is a set of labels. MergeWeather builds it by
-   checking out the base and running `git merge --no-ff` on each member, in ascending
-   lexicographic label order, with a fixed committer identity and a fixed timestamp.
-   The same set always produces the same merge commits and tree IDs, and the report
-   records both. Combinations with identical trees share their test evidence.
-4. **Exploration.** The order is: base (repeated, and it must pass stably), then each
-   branch alone, then every pair, then sizes 3 through `--max-size`, all within the
-   budget. A superset of a set that already failed, was flaky, or conflicted is pruned,
-   because it cannot reveal a new minimal interaction. `--full-first` tests the full set
-   right after the base.
-5. **Textual conflicts** are recorded separately (files, plus the branch whose merge
-   conflicted). They are never counted as behavioral failures.
-6. **Fingerprints.** A failure's identity is its outcome class plus a normalized
-   signature taken from the test output. Numbers, addresses and temp paths are
-   normalized away. You can override which output lines count with
-   `--fingerprint-regex`. Timeouts get their own fingerprint.
-7. **Repetition.** Every non-passing result is rerun `--repeats` times. Mixed outcomes
-   are classified as `flaky`, and findings built on them are labeled `unstable`.
-8. **Reduction.** Each failing combination is reduced by removing one member at a time,
-   as long as the same fingerprint still reproduces.
+### Honest minimality
 
-### What "minimal" means here
+- **`proven_1_minimal`**: the set fails stably, and removing *any single* member was
+  tested (with repeats) and definitively did not reproduce the fingerprint.
+- **`smallest_found`**: the proof is incomplete, and the report says why (budget,
+  conflicts, flakiness, errors).
 
-- `proven_1_minimal`: the set fails stably, and removing any single member was tested
-  (with repeats) and definitively did not reproduce the fingerprint.
-- `smallest_found`: the proof is incomplete. The report lists why: budget, conflicts,
-  flakiness or infrastructure errors.
-
-Neither label claims **global** minimality. A different, smaller or disjoint set could
+MergeWeather **never claims global minimality**. A different, disjoint set could
 produce the same failure.
 
-## Isolation
+## 🔒 Sandbox
 
-The `docker` backend (the default) runs each test with `--network none`, memory and swap
-caps, a CPU cap, `--pids-limit`, `--cap-drop ALL`, `no-new-privileges`, a non-root
-user, a tmpfs `/tmp`, and a wall-clock timeout. No host environment variables are passed
-unless you name them with `--pass-env`.
+The default `docker` backend runs each test with `--network none`, memory and swap caps,
+a CPU cap, `--pids-limit`, `--cap-drop ALL`, `no-new-privileges`, a non-root user, a
+tmpfs `/tmp` and a wall-clock timeout. No host environment variables are passed unless
+you name them with `--pass-env`.
 
 The `local` backend is meant for trusted code only, and you have to opt in with
-`--allow-unsandboxed`. It enforces the timeout, scrubs the environment, gives the test a
-throwaway `HOME` and applies rlimits where the OS supports them. It **cannot** block
-network access. Every report states which guarantees actually held.
+`--allow-unsandboxed`. It enforces the timeout, scrubs credentials from the environment,
+uses a throwaway `HOME` and applies rlimits where the OS supports them, but it **cannot
+block network access**. Every report states which guarantees actually held. `demo`
+uses Docker when it's available and otherwise falls back to the local backend, because
+the fixture is bundled, trusted code.
 
-## Reports
-
-`report.json` (schema `mergeweather.report/v1`), `report.md` and a self-contained
-`report.html` contain:
-
-- pinned inputs and branch diffs
-- every combination with its merge commit, tree, runs, output tails and fingerprints
-- findings with removal checks, minimality caveats and copy-paste reproduction commands
-- conflicts, pruned and unexplored combinations, and budget usage
-- an interaction graph: SVG in the HTML report, Mermaid in the Markdown report
-
-`report.html` is a single self-contained dashboard (about 110 KB). It makes no network
-requests, so you can attach it to a CI run or email it:
-
-- dark mode by default, with a light-mode toggle; styled with Tailwind compiled at
-  build time and inlined
-- an interactive graph with two views. The **combination lattice** has a column per
-  combination size and edges to the sets one branch larger; it highlights the
-  reduction path and 1-minimality proof for a finding. The **branch network** draws
-  interactions as hubs and conflicts as dashed edges. Hover for details, click to
-  inspect, scroll to zoom, drag to pan.
-- a collapsible **Evidence & LLM Explanation** drawer for each finding: the failure
-  signature, the removal-check table, the reduction path, raw test output, and any
-  attached explanation with OBSERVATION/HYPOTHESIS labels and evidence citations
-- a one-click **Copy reproduction command** button, with a fallback for `file://`
-  pages where the clipboard API is blocked
-- a filterable, searchable table of every combination
-
-All data is also rendered as plain HTML, so the report stays readable with JavaScript
-off. To change the styling, edit the classes in `src/mergeweather/html_report.py` and
-run `make css` (needs Node); the compiled CSS is committed, so users never need Node.
-
-## Optional explanation step
+## 🧠 Optional: evidence-cited explanations
 
 ```sh
 export ANTHROPIC_API_KEY=...
-mergeweather explain report/report.json            # adds an "explanation" section
-mergeweather explain report/report.json --dry-run  # print the exact prompt only
+mergeweather explain mergeweather-report/report.json            # adds an explanation to the report
+mergeweather explain mergeweather-report/report.json --dry-run  # print the exact prompt, no API call
 ```
 
-The model only sees evidence that is already in the report: branch diffs, combination
-outcomes and failure signatures. Every claim has to cite evidence IDs such as
-`diff:tax` or `combo:fraud+loyalty+tax`. Citations to IDs that don't exist are dropped.
-Any claim without a valid citation, or one the model marked as inference, is shown as
-**HYPOTHESIS**. This step never changes the findings.
+The model only sees evidence already in the report. Every claim must cite evidence IDs
+(`diff:tax`, `combo:fraud+loyalty+tax`). Citations to unknown IDs are dropped, and
+uncited or inferred claims are labeled **HYPOTHESIS**. Findings are never changed by
+this step.
 
-## Fixtures and demo
-
-`examples/make_fixtures.py` builds two repositories:
-
-- **latency-budget**: the integration test asserts that the summed checkout-stage
-  latency is ≤ 250 ms. The base is 100 ms, and each of three branches adds a 60 ms
-  stage in its own file. Base, singles and pairs pass (160 and 220 ms); the triple
-  fails (280 ms).
-- **harmless**: three branches (a 20 ms stage, docs, a log wording change) whose
-  combinations all pass.
-
-`mergeweather demo` (or `make demo`) uses the first fixture; `mergeweather demo --harmless`
-uses the second. Reports are written to `./mergeweather-demo/`.
-
-## Tests
+## 🛠 Development
 
 ```sh
-make test        # or: pytest -q
+git clone https://github.com/AnvitDevadiga/merge-weather && cd merge-weather
+make install   # uv venv + editable install with dev extras
+make test      # 40 tests: SIGINT/SIGTERM cleanup, flaky runs, invalid refs,
+               # merge conflicts, budget exhaustion, report rendering, demo
+make demo
 ```
 
-The suite covers both fixtures, deterministic trees, reduction from the full set,
-invalid and option-like refs, merge conflicts, flaky outcomes, budget exhaustion
-(during exploration and during reduction), timeouts, credential scrubbing, the Docker
-isolation flags, explanation citation checks, cleanup after SIGINT/SIGTERM, the `demo`
-command end to end, and the dashboard and weather summary rendering.
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the dev workflow and how to send a PR.
 
-In a terminal, `run` shows a live dashboard. Pass `--plain` for log lines (this is
-also the automatic choice when output isn't a TTY, e.g. in CI) or `-q` for the verdict only.
+## 📄 License
 
-## License
-
-MIT
+[MIT](LICENSE) © Anvit Devadiga
