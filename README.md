@@ -9,23 +9,62 @@ the combinations deterministically, runs your integration test against each one 
 isolated container, and reduces every failure to a small set of branches that still
 reproduces it. Each finding comes with evidence and the commands to reproduce it.
 
+## Try it in 10 seconds
+
+```sh
+uvx --from git+https://github.com/AnvitDevadiga/merge-weather mergeweather demo
 ```
-$ make demo
-=== latency-budget ===
-verdict: interactions-found
-  F1 3-way interaction: fraud + loyalty + tax [proven_1_minimal, stable]
-=== harmless ===
-verdict: no-failures-found
+
+`mergeweather demo` builds a throwaway Git repo with a hidden 3-way bug, runs the
+engine with a live dashboard, prints the forecast, and opens the HTML report in your
+browser:
+
 ```
+╭──────────────────────────── MergeWeather forecast ────────────────────────────╮
+│                               ⛈  Storm warning                                │
+╰───────────────────────────────────────────────────────────────────────────────╯
+            Forecast by combination
+╭───────────────────┬────────────────┬──────╮
+│ Combination       │ Weather        │ Runs │
+├───────────────────┼────────────────┼──────┤
+│ base              │ ☀ Sunny        │    3 │
+│ fraud             │ ☀ Sunny        │    1 │
+│ fraud+loyalty     │ ☀ Sunny        │    1 │
+│ fraud+loyalty+tax │ ⛈ Thunderstorm │    3 │
+╰───────────────────┴────────────────┴──────╯
+╭─ ⛈ F1 Thunderstorm ──────────────────────────────────────────────────╮
+│ fraud + loyalty + tax                                                │
+│ 3-way interaction · proven_1_minimal · stable · fail:1f068da68f61    │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+Options: `--harmless` (the all-clear fixture), `--no-open`, `--out DIR`, `--plain`.
+
+### The weather scale
+
+| Forecast | Meaning |
+|---|---|
+| ☀ Sunny | combination passes |
+| ⛈ Thunderstorm | branches pass alone but fail together (behavioral interaction) |
+| 🌧 Rain | a single branch fails on its own |
+| 🌦 Showers | flaky: the same tree gave mixed outcomes |
+| 🌫 Fog | textual merge conflict, so not tested |
+| 🌪 Tornado | infrastructure error (the sandbox could not run) |
+| ❔ Uncharted | not run because the budget ran out |
 
 ## Install
 
 ```sh
-pip install -e .            # Python ≥ 3.9, no runtime dependencies
-pip install -e '.[dev]'     # + pytest
+pipx install git+https://github.com/AnvitDevadiga/merge-weather   # or: uv tool install ...
+# from a clone:
+pip install -e '.[dev]'      # Python ≥ 3.9; only runtime dependency is rich
+make install && make test    # uses uv; creates .venv
 ```
 
-You need `git`. Docker is the default sandbox.
+Once the package is published to PyPI, `uvx mergeweather demo` will work with no URL.
+You need `git`. Docker is the default sandbox for `run`. `demo` uses Docker when it is
+available, and otherwise falls back to the local backend because the fixture is
+bundled, trusted code.
 
 ## Usage
 
@@ -144,20 +183,23 @@ Any claim without a valid citation, or one the model marked as inference, is sho
 - **harmless**: three branches (a 20 ms stage, docs, a log wording change) whose
   combinations all pass.
 
-`make demo` builds both and analyzes them. It uses Docker if it is running and
-otherwise falls back to the local backend. Open `demo-output/latency-budget/report.html`
-to see the result.
+`mergeweather demo` (or `make demo`) uses the first fixture; `mergeweather demo --harmless`
+uses the second. Reports are written to `./mergeweather-demo/`.
 
 ## Tests
 
 ```sh
-make test
+make test        # or: pytest -q
 ```
 
 The suite covers both fixtures, deterministic trees, reduction from the full set,
 invalid and option-like refs, merge conflicts, flaky outcomes, budget exhaustion
 (during exploration and during reduction), timeouts, credential scrubbing, the Docker
-isolation flags, explanation citation checks, and cleanup after SIGINT/SIGTERM.
+isolation flags, explanation citation checks, cleanup after SIGINT/SIGTERM, the `demo`
+command end to end, and the dashboard and weather summary rendering.
+
+In a terminal, `run` shows a live dashboard. Pass `--plain` for log lines (this is
+also the automatic choice when output isn't a TTY, e.g. in CI) or `-q` for the verdict only.
 
 ## License
 

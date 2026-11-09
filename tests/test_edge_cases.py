@@ -49,7 +49,8 @@ def test_cli_invalid_ref_exit_code(tmp_path, capsys):
                  "--sandbox", "local", "--allow-unsandboxed", "--out", str(tmp_path / "o"),
                  "--workroot", str(tmp_path / "w")])
     assert code == 2
-    assert "does not resolve" in capsys.readouterr().err
+    cap = capsys.readouterr()
+    assert "does not resolve" in cap.out + cap.err
 
 
 def test_local_requires_opt_in(tmp_path):

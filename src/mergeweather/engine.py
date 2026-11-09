@@ -128,7 +128,7 @@ class Engine:
     def __init__(self, repo: Path, base_ref: str, branches: Sequence[Tuple[str, str]],
                  test_command: str, runner: Runner, budget: Budget, repeats: int = 3,
                  fingerprint_regex: Optional[str] = None, workroot: Optional[Path] = None,
-                 full_first: bool = False, log=None):
+                 full_first: bool = False, log=None, on_event=None):
         if not branches:
             raise ConfigError("at least one branch is required")
         labels = [b[0] for b in branches]
@@ -150,6 +150,7 @@ class Engine:
         self.workroot = workroot
         self.full_first = full_first
         self.log = log or (lambda msg: None)
+        self.emit = on_event or (lambda kind, **data: None)
         self.combos: Dict[Combo, ComboRecord] = {}
         self.tree_runs: Dict[str, ComboRecord] = {}
         self.pruned: List[Dict[str, object]] = []
@@ -209,6 +210,7 @@ class Engine:
         rec.runs.append(Run(f"{rec.id}#{len(rec.runs) + 1}", outcome, raw.exit_code, raw.duration,
                             fp, sig, raw.stdout, raw.stderr + (raw.infra_error or "")))
         self.log(f"  run {rec.id}#{len(rec.runs)}: {outcome} {'' if fp == 'pass' else fp}")
+        self.emit("run", combo=rec, run=rec.runs[-1])
 
     def _classify(self, rec: ComboRecord) -> None:
         if not rec.runs:
@@ -239,6 +241,7 @@ class Engine:
             self._build(rec)
             if rec.status == "conflict":
                 self.log(f"  {rec.id}: textual merge conflict in {', '.join(rec.conflict_files)}")
+                self.emit("combo", combo=rec)
                 return rec
             twin = self.tree_runs.get(rec.tree)
             if twin is not None and twin is not rec:
@@ -253,6 +256,7 @@ class Engine:
             target = self.repeats if (have_nonpass or confirm) else 1
             if len(rec.runs) >= target:
                 break
+            self.emit("run_start", combo=rec, attempt=len(rec.runs) + 1)
             if not self.budget.try_charge():
                 rec.incomplete = True
                 break
@@ -264,6 +268,7 @@ class Engine:
         else:
             rec.incomplete = False
         self._classify(rec)
+        self.emit("combo", combo=rec)
         return rec
 
     # ------------------------------------------------------------ reduction
@@ -330,6 +335,7 @@ class Engine:
 
     def explore(self) -> None:
         self.log(f"base {self.base.sha[:12]}")
+        self.emit("phase", name="base")
         base = self.evaluate((), confirm=True)
         self.base_ok = base.status == "pass" and not base.incomplete
         if not self.base_ok:
@@ -341,6 +347,7 @@ class Engine:
             self.evaluate(tuple(self.order))
         for k in range(1, min(n, self.budget.max_size) + 1):
             self.log(f"size {k}")
+            self.emit("phase", name=f"size {k}")
             for combo in itertools.combinations(self.order, k):
                 if combo in self.combos:
                     continue
@@ -367,6 +374,7 @@ class Engine:
                            f["fingerprint"] == rec.primary_fingerprint for f in self.findings):
                         continue  # already explained by a smaller finding
                     self.log(f"reducing {rec.id}")
+                    self.emit("phase", name=f"reducing {rec.id}")
                     finding = self.reduce(rec)
                     key = (tuple(finding["branches"]), finding["fingerprint"])
                     if key not in seen:

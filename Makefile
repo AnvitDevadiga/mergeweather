@@ -1,11 +1,15 @@
-PY ?= python3
+.PHONY: install demo test build clean
+install:
+	uv venv --allow-existing && uv pip install -e '.[dev]'
 
-.PHONY: demo test clean
-demo:
-	$(PY) scripts/demo.py
+demo: install
+	.venv/bin/mergeweather demo
 
-test:
-	$(PY) -m pytest -q
+test: install
+	.venv/bin/pytest -q
+
+build:
+	uv build
 
 clean:
-	rm -rf build demo-output .pytest_cache
+	rm -rf build dist .venv mergeweather-demo mergeweather-report .pytest_cache
