@@ -12,6 +12,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         python: ["3.9", "3.13"]
+        exclude:
+          # 3.9 is end-of-life and no longer provided for ubuntu-latest runners
+          - os: ubuntu-latest
+            python: "3.9"
+        include:
+          - os: ubuntu-latest
+            python: "3.10"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

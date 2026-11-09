@@ -107,7 +107,7 @@ Run one file or test with `pytest tests/test_edge_cases.py -k flaky -q`.
 4. Update `README.md` if you changed user-facing behavior or flags.
 5. Open a PR describing **what** changed and **why**. Screenshots help for UI changes.
 
-CI runs the suite on Linux and macOS with Python 3.9 and 3.13, plus a demo smoke test.
+CI runs the suite on macOS (Python 3.9, 3.13) and Linux (Python 3.10, 3.13), plus a demo smoke test.
 Keep PRs focused: several small PRs are easier to review than one large one.
 
 ## Reporting bugs
