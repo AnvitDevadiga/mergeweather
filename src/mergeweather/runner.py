@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -61,6 +62,19 @@ class Runner:
 
     def run(self, workdir: Path, command: str) -> RawRun:
         raise NotImplementedError
+
+
+def _kill_group(pgid: int) -> None:
+    """SIGKILL a process group, treating "already gone" as success.
+
+    The group may already have been killed by the signal handler. Linux then
+    reports ESRCH, while macOS reports EPERM when only an un-reaped zombie
+    leader remains. Neither must mask the original interrupt.
+    """
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 class LocalRunner(Runner):
@@ -132,15 +146,14 @@ class LocalRunner(Runner):
             out, err = proc.communicate(timeout=self.limits.timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
-            try:
-                os.killpg(proc.pid, 9)
-            except ProcessLookupError:
-                pass
+            _kill_group(proc.pid)
             out, err = proc.communicate()
         except BaseException:
-            try:  # interrupted: never leave the test process group behind
-                os.killpg(proc.pid, 9)
-            except ProcessLookupError:
+            # interrupted: never leave the test process group behind
+            _kill_group(proc.pid)
+            try:
+                proc.wait(timeout=5)
+            except Exception:
                 pass
             raise
         finally:

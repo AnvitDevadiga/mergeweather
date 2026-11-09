@@ -91,3 +91,19 @@ def test_explanation_rendered_and_escaped():
     }
     md = report.explanation_markdown(exp)
     assert "[HYPOTHESIS]" in md
+
+
+def test_kill_group_tolerates_already_dead_group(monkeypatch):
+    """macOS raises EPERM (Linux ESRCH) when the group was already killed by the signal
+    handler and only a zombie leader remains; that must not mask the interrupt."""
+    import os
+
+    from mergeweather import runner
+
+    for exc in (PermissionError(1, "Operation not permitted"), ProcessLookupError(3, "No such process")):
+
+        def boom(pgid, sig, exc=exc):
+            raise exc
+
+        monkeypatch.setattr(os, "killpg", boom)
+        runner._kill_group(12345)  # must not raise
